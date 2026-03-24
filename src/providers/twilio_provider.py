@@ -4,6 +4,7 @@ import asyncio
 import base64
 import json
 import os
+import threading
 import structlog
 from typing import AsyncIterator
 
@@ -30,7 +31,7 @@ class TwilioTelephonyProvider(TelephonyProvider):
         self._audio_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
         self._stream_sid: str | None = None
         # Mark event tracking
-        self._mark_futures: dict[str, asyncio.Future] = {}
+        self._mark_events: dict[str, threading.Event] = {}
         self._mark_counter: int = 0
 
     async def place_call(self, phone_number: str, webhook_url: str) -> str:
@@ -60,10 +61,8 @@ class TwilioTelephonyProvider(TelephonyProvider):
             await self._audio_queue.put(audio_bytes)
         elif event == "mark":
             name = message.get("mark", {}).get("name", "")
-            if name in self._mark_futures:
-                fut = self._mark_futures.pop(name)
-                if not fut.done():
-                    fut.set_result(True)
+            if name in self._mark_events:
+                self._mark_events.pop(name).set()
                 log.debug("mark_received", name=name)
         elif event == "stop":
             await self._audio_queue.put(None)
@@ -94,6 +93,8 @@ class TwilioTelephonyProvider(TelephonyProvider):
 
         Blocks until Twilio sends back the mark event (meaning all audio
         before this mark has been played to the caller), or times out.
+        Uses threading.Event because mark confirmation arrives in a different
+        thread (uvicorn) than the pipeline awaiting it.
         """
         if self._ws is None:
             return
@@ -101,9 +102,8 @@ class TwilioTelephonyProvider(TelephonyProvider):
         self._mark_counter += 1
         name = f"mark-{self._mark_counter}"
 
-        loop = asyncio.get_event_loop()
-        fut = loop.create_future()
-        self._mark_futures[name] = fut
+        evt = threading.Event()
+        self._mark_events[name] = evt
 
         message = json.dumps({
             "event": "mark",
@@ -112,11 +112,14 @@ class TwilioTelephonyProvider(TelephonyProvider):
         })
         await self._ws.send_text(message)
 
-        try:
-            await asyncio.wait_for(fut, timeout=_MARK_TIMEOUT_SEC)
+        # Wait in executor to not block the event loop
+        loop = asyncio.get_event_loop()
+        confirmed = await loop.run_in_executor(None, evt.wait, _MARK_TIMEOUT_SEC)
+
+        if confirmed:
             log.debug("mark_confirmed", name=name)
-        except asyncio.TimeoutError:
-            self._mark_futures.pop(name, None)
+        else:
+            self._mark_events.pop(name, None)
             log.warning("mark_timeout", name=name, timeout=_MARK_TIMEOUT_SEC)
 
     async def clear_audio(self, call_id: str) -> None:
