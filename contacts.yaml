@@ -1,0 +1,11 @@
+contacts:
+  "+36203911669":
+    customer_name: "Tatár Gábor"
+    company_name: "WebBuilder Kft."
+    script: "website_followup"
+    website_url: "https://gabor-weboldal.hu"
+
+default:
+  customer_name: ""
+  company_name: "WebBuilder Kft."
+  script: "website_followup"
