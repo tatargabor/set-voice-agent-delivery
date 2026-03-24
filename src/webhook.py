@@ -80,6 +80,21 @@ def enable_inbound_mode(done_event: threading.Event | None = None) -> None:
     _inbound_done = done_event
 
 
+@app.get("/api/projects")
+async def list_projects():
+    """Discover projects from the code directory."""
+    code_dir = Path(os.environ.get("PROJECTS_DIR", "/home/tg/code2"))
+    projects = []
+    if code_dir.exists():
+        for d in sorted(code_dir.iterdir()):
+            if d.is_dir() and not d.name.startswith("."):
+                # Check if it looks like a project (has pyproject.toml, package.json, or openspec/)
+                is_project = any((d / f).exists() for f in ["pyproject.toml", "package.json", "openspec", ".git"])
+                if is_project:
+                    projects.append({"id": d.name, "label": d.name, "path": str(d)})
+    return JSONResponse({"projects": projects})
+
+
 @app.get("/twilio/token")
 async def twilio_token(request: Request, identity: str = "browser-user"):
     """Generate Twilio Access Token for browser voice client."""
@@ -130,10 +145,14 @@ async def twilio_voice(request: Request):
         call_sid = form.get("CallSid", "")
         log.info("inbound_call", caller=caller_phone, call_sid=call_sid)
 
+        # Get project from custom params (sent by browser widget)
+        project_id = form.get("project", "") or form.get("Project", "")
+
         # Store for the WebSocket handler
         app.state.pending_inbound = {
             "caller_phone": caller_phone,
             "call_sid": call_sid,
+            "project_id": project_id,
         }
 
     call_id = ""
@@ -173,10 +192,12 @@ async def twilio_media_stream(ws: WebSocket):
         call_sid = inbound_info["call_sid"]
         customer = lookup_caller(caller_phone)
 
-        # Load project context if project_dir is configured
+        # Load project context — from widget selection or contacts.yaml
         project_context_str = ""
-        project_dir = customer.get("project_dir")
-        if project_dir:
+        project_id = inbound_info.get("project_id", "")
+        code_dir = Path(os.environ.get("PROJECTS_DIR", "/home/tg/code2"))
+        project_dir = str(code_dir / project_id) if project_id else customer.get("project_dir")
+        if project_dir and Path(project_dir).exists():
             pc = load_project_context(project_dir, customer.get("customer_name", ""))
             project_context_str = pc.to_prompt_section()
             log.info("project_context_loaded", chars=len(project_context_str))

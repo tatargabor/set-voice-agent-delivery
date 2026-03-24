@@ -1,0 +1,20 @@
+projects:
+  set-voice-agent-delivery:
+    path: "/home/tg/code2/set-voice-agent-delivery"
+    label: "Voice Agent (ez a projekt)"
+
+  set-core:
+    path: "/home/tg/code2/set-core"
+    label: "set-core (orchestration framework)"
+
+  match-radar:
+    path: "/home/tg/code2/match-radar"
+    label: "Match Radar"
+
+  tatargabor:
+    path: "/home/tg/code2/tatargabor"
+    label: "tatargabor.com weboldal"
+
+  freecad-mcp:
+    path: "/home/tg/code2/freecad-mcp"
+    label: "FreeCAD MCP"

@@ -5,6 +5,7 @@
 const callBtn = document.getElementById('call-btn');
 const statusEl = document.getElementById('status');
 const identityInput = document.getElementById('identity');
+const projectSelect = document.getElementById('project');
 
 let device = null;
 let activeCall = null;
@@ -18,6 +19,22 @@ function setButtonState(state) {
     callBtn.className = state;
     callBtn.disabled = state === 'connecting';
     callBtn.innerHTML = state === 'active' ? '&#x1F6D1;' : '&#x1F3A4;';
+}
+
+async function loadProjects() {
+    try {
+        const resp = await fetch('/api/projects');
+        const data = await resp.json();
+        projectSelect.innerHTML = '<option value="">-- Válasszon projektet --</option>';
+        for (const p of data.projects) {
+            const opt = document.createElement('option');
+            opt.value = p.id;
+            opt.textContent = p.label;
+            projectSelect.appendChild(opt);
+        }
+    } catch (err) {
+        projectSelect.innerHTML = '<option value="">Hiba a betöltéskor</option>';
+    }
 }
 
 async function initDevice() {
@@ -37,7 +54,7 @@ async function initDevice() {
         });
 
         device.on('registered', () => {
-            setStatus('Kész — nyomja meg a gombot a híváshoz');
+            setStatus('Kész — válasszon projektet és nyomja meg a gombot');
             callBtn.disabled = false;
         });
 
@@ -54,7 +71,6 @@ async function initDevice() {
 
 async function startCall() {
     if (activeCall) {
-        // Hangup
         activeCall.disconnect();
         return;
     }
@@ -64,14 +80,18 @@ async function startCall() {
         setStatus('Kapcsolódás...');
 
         const identity = identityInput.value.trim() || 'browser-user';
+        const project = projectSelect.value;
 
-        // Re-init device if identity changed
         if (!device) {
             await initDevice();
         }
 
         activeCall = await device.connect({
-            params: { To: 'voice-agent', Identity: identity }
+            params: {
+                To: 'voice-agent',
+                Identity: identity,
+                project: project,
+            }
         });
 
         activeCall.on('accept', () => {
@@ -105,5 +125,6 @@ async function startCall() {
 
 callBtn.addEventListener('click', startCall);
 
-// Initialize on page load
+// Initialize
+loadProjects();
 initDevice();

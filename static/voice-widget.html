@@ -55,19 +55,20 @@
         }
         #status.active { color: #22c55e; font-weight: 600; }
         #status.error { color: #ef4444; }
-        .identity-input {
-            margin-bottom: 24px;
+        .form-row {
+            margin-bottom: 16px;
         }
-        .identity-input input {
+        .form-row select, .form-row input {
             padding: 10px 16px;
             border: 1px solid #ddd;
             border-radius: 8px;
             font-size: 0.95rem;
             width: 100%;
-            max-width: 250px;
+            max-width: 280px;
             text-align: center;
         }
-        .identity-input input:focus { outline: none; border-color: #22c55e; }
+        .form-row select:focus, .form-row input:focus { outline: none; border-color: #22c55e; }
+        .form-row label { display: block; font-size: 0.8rem; color: #999; margin-bottom: 4px; }
     </style>
 </head>
 <body>
@@ -75,7 +76,14 @@
         <h1>AI Asszisztens</h1>
         <p class="subtitle">WebBuilder Kft.</p>
 
-        <div class="identity-input">
+        <div class="form-row">
+            <label>Projekt</label>
+            <select id="project">
+                <option value="">Betöltés...</option>
+            </select>
+        </div>
+
+        <div class="form-row">
             <input type="text" id="identity" placeholder="Az Ön neve (opcionális)">
         </div>
 
