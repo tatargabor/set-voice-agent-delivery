@@ -11,6 +11,9 @@ from .providers.base import STTProvider, TTSProvider, TelephonyProvider
 
 log = structlog.get_logger()
 
+# Sentinel value to signal end of a turn's sentence chunks
+_TURN_END = "__TURN_END__"
+
 
 class CallPipeline:
     """Orchestrates the full voice call: audio in → STT → Claude → TTS → audio out."""
@@ -72,7 +75,7 @@ class CallPipeline:
                 break
 
     async def _llm_loop(self, ctx: CallContext) -> None:
-        """Get transcripts → Claude → put responses on TTS queue."""
+        """Get transcripts → Claude streaming → put sentence chunks on TTS queue."""
         while not self.state_machine.is_ended:
             try:
                 transcript = await asyncio.wait_for(self._stt_queue.get(), timeout=1.0)
@@ -82,40 +85,70 @@ class CallPipeline:
             log.info("processing_transcript", text=transcript)
 
             t0 = time.monotonic()
-            response, usage = await self.agent.respond(ctx, transcript)
-            elapsed_ms = int((time.monotonic() - t0) * 1000)
+            full_response = ""
+            first_chunk = True
 
-            log.info("agent_response", text=response)
+            async for sentence in self.agent.respond_stream(ctx, transcript):
+                if first_chunk:
+                    elapsed_ms = int((time.monotonic() - t0) * 1000)
+                    log.info("first_sentence", text=sentence, latency_ms=elapsed_ms)
+                    if self.metrics:
+                        self.metrics.response_times_ms.append(elapsed_ms)
+                    first_chunk = False
+                else:
+                    log.debug("sentence_chunk", text=sentence)
 
-            if self.metrics:
-                self.metrics.add_claude_usage(usage["input_tokens"], usage["output_tokens"])
-                self.metrics.response_times_ms.append(elapsed_ms)
+                full_response += sentence + " "
+                await self._tts_queue.put(sentence)
+
+            # Signal end of this turn's chunks
+            await self._tts_queue.put(_TURN_END)
+
+            # Get usage from streaming response
+            if self.agent.last_usage and self.metrics:
+                self.metrics.add_claude_usage(
+                    self.agent.last_usage["input_tokens"],
+                    self.agent.last_usage["output_tokens"],
+                )
                 self.metrics.turn_count += 1
 
-            if self.agent.should_hangup(response):
-                await self._tts_queue.put(response)
-                # Wait for TTS to send the farewell audio
+            log.info("agent_response_complete", text=full_response.strip())
+
+            if self.agent.should_hangup(full_response):
+                # Wait for TTS to finish playing all chunks
                 await self._tts_queue.join()
-                # Brief pause to let Twilio play the farewell
                 await asyncio.sleep(3)
                 await self._transition(CallState.ENDED, reason="agent farewell")
                 break
 
-            await self._tts_queue.put(response)
-
     async def _tts_loop(self, call_id: str) -> None:
-        """Get response text → TTS → send audio to telephony."""
+        """Get sentence chunks → TTS → send audio to telephony.
+
+        Processes multiple sentence chunks per turn. Only sends mark
+        and transitions to LISTENING after the turn-end sentinel.
+        """
         while not self.state_machine.is_ended:
             try:
                 text = await asyncio.wait_for(self._tts_queue.get(), timeout=1.0)
             except asyncio.TimeoutError:
                 continue
 
+            if text == _TURN_END:
+                # End of turn — wait for playback and transition to LISTENING
+                self._tts_queue.task_done()
+                if not self._tts_cancel_event.is_set() and not self.state_machine.is_ended:
+                    await self.telephony.send_mark(call_id)
+                    if self._state == CallState.SPEAKING:
+                        await self._transition(CallState.LISTENING, reason="tts complete")
+                continue
+
             if self.metrics:
                 self.metrics.tts_chars += len(text)
 
-            await self._transition(CallState.SPEAKING, reason="tts start")
-            self._tts_cancel_event.clear()
+            # Transition to SPEAKING on first chunk of a turn
+            if self._state != CallState.SPEAKING and not self.state_machine.is_ended:
+                await self._transition(CallState.SPEAKING, reason="tts start")
+                self._tts_cancel_event.clear()
 
             try:
                 async for audio_chunk in self.tts.synthesize_stream(text):
@@ -126,45 +159,34 @@ class CallPipeline:
             finally:
                 self._tts_queue.task_done()
 
-            if not self._tts_cancel_event.is_set() and not self.state_machine.is_ended:
-                # Wait for Twilio to actually finish playing the audio
-                await self.telephony.send_mark(call_id)
-                # Only transition if still in SPEAKING (barge-in may have changed state)
-                if self._state == CallState.SPEAKING:
-                    await self._transition(CallState.LISTENING, reason="tts complete")
-
     async def run(self, ctx: CallContext, call_id: str) -> None:
-        """Run the full call pipeline.
-
-        Args:
-            ctx: The call context with customer info and conversation history.
-            call_id: The telephony call ID (e.g. Twilio Call SID).
-        """
+        """Run the full call pipeline."""
         log.info("pipeline_start", customer=ctx.customer_name, call_id=call_id)
 
-        # Connect providers in this event loop (important for WebSocket sessions)
+        # Connect providers in this event loop
         await self.stt.connect()
         await self.tts.connect()
 
-        # Generate and speak greeting
-        greeting, greeting_usage = await self.agent.get_greeting(ctx)
-        log.info("greeting_generated", text=greeting)
-
-        if self.metrics:
-            self.metrics.add_claude_usage(greeting_usage["input_tokens"], greeting_usage["output_tokens"])
-            self.metrics.tts_chars += len(greeting)
-
+        # Stream greeting sentence-by-sentence
         greeting_audio_bytes = 0
-        async for audio_chunk in self.tts.synthesize_stream(greeting):
-            await self.telephony.send_audio(call_id, audio_chunk)
-            greeting_audio_bytes += len(audio_chunk)
+        async for sentence in self.agent.get_greeting_stream(ctx):
+            log.info("greeting_chunk", text=sentence)
+            if self.metrics:
+                self.metrics.tts_chars += len(sentence)
+            async for audio_chunk in self.tts.synthesize_stream(sentence):
+                await self.telephony.send_audio(call_id, audio_chunk)
+                greeting_audio_bytes += len(audio_chunk)
 
-        # Wait for greeting playback — can't use mark here (same thread as webhook
-        # forwarding loop = deadlock). Estimate from audio size.
-        # Google TTS returns WAV (44 byte header) with mulaw 8kHz (1 byte/sample).
+        # Track greeting usage
+        if self.agent.last_usage and self.metrics:
+            self.metrics.add_claude_usage(
+                self.agent.last_usage["input_tokens"],
+                self.agent.last_usage["output_tokens"],
+            )
+
+        # Wait for greeting playback
         audio_data_bytes = max(0, greeting_audio_bytes - 44)
         greeting_duration = audio_data_bytes / 8000
-        # Subtract time already elapsed during send + Twilio buffering (~1 sec head start)
         wait_time = max(0, greeting_duration - 1.0)
         await asyncio.sleep(wait_time)
         await self._transition(CallState.LISTENING, reason="greeting complete")
@@ -176,7 +198,6 @@ class CallPipeline:
                 tg.create_task(self._llm_loop(ctx))
                 tg.create_task(self._tts_loop(call_id))
         except* Exception as eg:
-            # Log any errors from the task group
             for exc in eg.exceptions:
                 if not isinstance(exc, asyncio.CancelledError):
                     log.error("pipeline_error", error=str(exc), type=type(exc).__name__)
@@ -186,12 +207,12 @@ class CallPipeline:
             await self.stt.disconnect()
             await self.tts.disconnect()
 
-        # Hang up the call after pipeline ends
+        # Hang up after pipeline ends
         if self.state_machine.is_ended:
             try:
                 await self.telephony.hangup(call_id)
                 log.info("call_hangup", call_id=call_id)
             except Exception:
-                pass  # May already be disconnected
+                pass
 
         log.info("pipeline_end", call_id=call_id, turns=len(ctx.history))

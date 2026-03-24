@@ -1,6 +1,7 @@
 """Claude-powered conversation agent for voice calls."""
 
 import asyncio
+from typing import AsyncGenerator
 from anthropic import AsyncAnthropic
 from pydantic import BaseModel
 
@@ -14,12 +15,26 @@ class CallContext(BaseModel):
     history: list[dict] = []
 
 
+def is_sentence_boundary(text: str) -> bool:
+    """Check if text ends at a natural sentence boundary for TTS chunking."""
+    if not text.strip():
+        return False
+    last_char = text.rstrip()[-1]
+    if last_char in '.!?':
+        return True
+    # Split on comma for long clauses (Hungarian sentences tend to be long)
+    if last_char == ',' and len(text.strip()) > 40:
+        return True
+    return False
+
+
 class ConversationAgent:
     """Claude-based conversation engine for voice calls."""
 
     def __init__(self, model: str = "claude-sonnet-4-6"):
         self.client = AsyncAnthropic()
         self.model = model
+        self.last_usage: dict | None = None
 
     def _build_system_prompt(self, ctx: CallContext) -> str:
         return f"""Te egy ügyfélszolgálati agent vagy a {ctx.company_name} nevében.
@@ -37,7 +52,7 @@ Szabályok:
 - Ne ismételd magad, ne légy túl formális"""
 
     async def get_greeting(self, ctx: CallContext) -> tuple[str, dict]:
-        """Generate the opening greeting.
+        """Generate the opening greeting (non-streaming, greeting is short).
 
         Returns:
             Tuple of (text, usage_dict) where usage_dict has input_tokens and output_tokens.
@@ -53,11 +68,42 @@ Szabályok:
         ctx.history.append({"role": "assistant", "content": text})
         return text, usage
 
+    async def get_greeting_stream(self, ctx: CallContext) -> AsyncGenerator[str, None]:
+        """Stream the opening greeting sentence-by-sentence.
+
+        Yields sentence chunks. After exhaustion, self.last_usage has token counts.
+        """
+        async with self.client.messages.stream(
+            model=self.model,
+            system=self._build_system_prompt(ctx),
+            messages=[{"role": "user", "content": "(Az ügyfél felvette a telefont. Köszöntsd, mondd el hogy a hívás rögzítésre kerülhet, majd térj a tárgyra.)"}],
+            max_tokens=150,
+        ) as stream:
+            buffer = ""
+            full_text = ""
+            async for text in stream.text_stream:
+                buffer += text
+                full_text += text
+                if is_sentence_boundary(buffer):
+                    yield buffer.strip()
+                    buffer = ""
+            # Yield remaining buffer
+            if buffer.strip():
+                yield buffer.strip()
+
+            # Get usage from final message
+            final = await stream.get_final_message()
+            self.last_usage = {
+                "input_tokens": final.usage.input_tokens,
+                "output_tokens": final.usage.output_tokens,
+            }
+            ctx.history.append({"role": "assistant", "content": full_text})
+
     async def respond(self, ctx: CallContext, customer_text: str) -> tuple[str, dict]:
-        """Generate response to customer speech.
+        """Generate response (non-streaming, for backward compat).
 
         Returns:
-            Tuple of (text, usage_dict) where usage_dict has input_tokens and output_tokens.
+            Tuple of (text, usage_dict).
         """
         ctx.history.append({"role": "user", "content": customer_text})
 
@@ -71,6 +117,40 @@ Szabályok:
         usage = {"input_tokens": response.usage.input_tokens, "output_tokens": response.usage.output_tokens}
         ctx.history.append({"role": "assistant", "content": text})
         return text, usage
+
+    async def respond_stream(self, ctx: CallContext, customer_text: str) -> AsyncGenerator[str, None]:
+        """Stream response sentence-by-sentence.
+
+        Yields sentence chunks as Claude generates them.
+        After exhaustion, self.last_usage has token counts.
+        """
+        ctx.history.append({"role": "user", "content": customer_text})
+
+        async with self.client.messages.stream(
+            model=self.model,
+            system=self._build_system_prompt(ctx),
+            messages=ctx.history,
+            max_tokens=300,
+        ) as stream:
+            buffer = ""
+            full_text = ""
+            async for text in stream.text_stream:
+                buffer += text
+                full_text += text
+                if is_sentence_boundary(buffer):
+                    yield buffer.strip()
+                    buffer = ""
+            # Yield remaining buffer
+            if buffer.strip():
+                yield buffer.strip()
+
+            # Get usage
+            final = await stream.get_final_message()
+            self.last_usage = {
+                "input_tokens": final.usage.input_tokens,
+                "output_tokens": final.usage.output_tokens,
+            }
+            ctx.history.append({"role": "assistant", "content": full_text})
 
     def should_hangup(self, agent_text: str) -> bool:
         """Check if the agent's response signals end of call."""
