@@ -117,11 +117,11 @@ async def run_call(args):
         log.info("call_placed", call_id=call_id, phone=args.phone)
 
         # 9. Configure webhook with pipeline state
-        done_event = asyncio.Event()
+        done_event = threading.Event()
         webhook.configure(ctx, pipeline, telephony, call_id, done_event)
 
-        # 10. Wait for call to complete
-        await done_event.wait()
+        # 10. Wait for call to complete (threading.Event because webhook runs in uvicorn thread)
+        await asyncio.get_event_loop().run_in_executor(None, done_event.wait)
         log.info("call_completed")
         outcome = "completed"
 

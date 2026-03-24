@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import json
+import threading
 import structlog
 from fastapi import FastAPI, WebSocket, Request
 from fastapi.responses import Response
@@ -22,7 +23,7 @@ _call_context: CallContext | None = None
 _pipeline: CallPipeline | None = None
 _telephony: TwilioTelephonyProvider | None = None
 _call_id: str | None = None
-_pipeline_done: asyncio.Event | None = None
+_pipeline_done: threading.Event | None = None
 
 
 def configure(
@@ -30,7 +31,7 @@ def configure(
     pipeline: CallPipeline,
     telephony: TwilioTelephonyProvider,
     call_id: str,
-    done_event: asyncio.Event,
+    done_event: threading.Event,
 ) -> None:
     """Configure the webhook server with call state."""
     global _call_context, _pipeline, _telephony, _call_id, _pipeline_done
