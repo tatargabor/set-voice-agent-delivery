@@ -105,10 +105,12 @@ class ResponseLayers:
 
         # Collect deep response sentences while fast ack is running
         deep_sentences = []
+        deep_done = asyncio.Event()
 
         async def _collect_deep():
             async for sentence in self._deep_response_stream(ctx, system_prompt):
                 deep_sentences.append(sentence)
+            deep_done.set()
 
         deep_task = asyncio.create_task(_collect_deep())
 
@@ -116,13 +118,21 @@ class ResponseLayers:
         fast_text = await fast_task
         yield fast_text
 
-        # Wait for deep to finish
-        await deep_task
+        # Wait for deep response with periodic "still thinking" updates
+        _THINKING = ["Egy pillanat, utánanézek...", "Még dolgozom rajta..."]
+        thinking_idx = 0
+        while not deep_done.is_set():
+            try:
+                await asyncio.wait_for(deep_done.wait(), timeout=4.0)
+            except asyncio.TimeoutError:
+                if thinking_idx < len(_THINKING):
+                    yield _THINKING[thinking_idx]
+                    thinking_idx += 1
 
         # Yield deep response sentences
         for sentence in deep_sentences:
             yield sentence
 
-        # Record both in history as one assistant message
-        full_text = fast_text + " " + " ".join(deep_sentences)
-        ctx.history.append({"role": "assistant", "content": full_text.strip()})
+        # Record in history
+        all_parts = [fast_text] + deep_sentences
+        ctx.history.append({"role": "assistant", "content": " ".join(all_parts).strip()})
