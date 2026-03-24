@@ -117,6 +117,10 @@ class CallPipeline:
         """
         log.info("pipeline_start", customer=ctx.customer_name, call_id=call_id)
 
+        # Connect providers in this event loop (important for WebSocket sessions)
+        await self.stt.connect()
+        await self.tts.connect()
+
         # Generate and speak greeting
         greeting = await self.agent.get_greeting(ctx)
         log.info("greeting_generated", text=greeting)
@@ -137,5 +141,8 @@ class CallPipeline:
             for exc in eg.exceptions:
                 if not isinstance(exc, asyncio.CancelledError):
                     log.error("pipeline_error", error=str(exc), type=type(exc).__name__)
+        finally:
+            await self.stt.disconnect()
+            await self.tts.disconnect()
 
         log.info("pipeline_end", call_id=call_id, turns=len(ctx.history))

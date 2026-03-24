@@ -82,14 +82,11 @@ async def run_call(args):
     safety.pre_call_check(args.phone)
     log.info("safety_checks_passed")
 
-    # 4. Initialize providers
+    # 4. Initialize providers (STT/TTS connect inside pipeline.run() to stay in the right event loop)
     stt = SonioxSTTProvider()
     tts = GoogleTTSProvider()
     telephony = TwilioTelephonyProvider()
     agent = ConversationAgent()
-
-    await stt.connect()
-    await tts.connect()
 
     try:
         # 5. Build pipeline
@@ -135,8 +132,7 @@ async def run_call(args):
         print(f"\n--- Hívás vége ({len(ctx.history)} üzenet) ---")
 
     finally:
-        await stt.disconnect()
-        await tts.disconnect()
+        pass  # STT/TTS disconnect handled by pipeline.run()
 
 
 def main():

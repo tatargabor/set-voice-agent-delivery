@@ -71,7 +71,8 @@ class SonioxSTTProvider(STTProvider):
                         if current_text.strip():
                             yield current_text.strip()
                             current_text = ""
-                    else:
+                    elif getattr(token, "is_final", True):
+                        # Only accumulate finalized tokens to avoid partial duplicates
                         current_text += token.text
         finally:
             feed_task.cancel()
