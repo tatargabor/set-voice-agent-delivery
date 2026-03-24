@@ -34,7 +34,7 @@ def test_save_creates_json_file(tmp_path):
     assert filepath.exists()
     assert filepath.suffix == ".json"
     assert "2026-03-24" in str(filepath.parent.name)
-    assert filepath.name.startswith("2026-03-24_08-38-00")
+    assert filepath.name.startswith("20260324_083800")
     assert "gbor" in filepath.name
 
     data = json.loads(filepath.read_text())

@@ -74,8 +74,8 @@ class CallLogger:
             "errors": metrics.errors,
         }
 
-        # Write to file — format: YYYY-MM-DD_HH-MM-SS_customer.json
-        datetime_str = metrics.timestamp_start.strftime("%Y-%m-%d_%H-%M-%S")
+        # Write to file — format: YYYYMMDD_HHMMSS_customer.json
+        datetime_str = metrics.timestamp_start.strftime("%Y%m%d_%H%M%S")
         name_slug = re.sub(r"[^a-z0-9]", "", metrics.customer_name.lower())[:20] or "anonymous"
         date_str = metrics.timestamp_start.strftime("%Y-%m-%d")
 
