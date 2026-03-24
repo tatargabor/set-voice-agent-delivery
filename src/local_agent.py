@@ -27,10 +27,11 @@ Projekt könyvtár: {cache.project_dir}
 {cache_context}
 
 Szabályok:
-- Max 2 mondatban válaszolj — az eredményed telefonon lesz felolvasva
+- Max 2 mondatban válaszolj — az eredményed telefonon lesz felolvasva TTS-sel
 - Foglald össze a lényeget, ne olvass fel fájlokat szó szerint
 - Ha nem találsz választ, mondd meg őszintén
-- Használd a tool-okat ha a cache-ben nincs elég info"""
+- Használd a tool-okat ha a cache-ben nincs elég info
+- NE használj markdown formázást, csillagokat, emojikat, kódot. Tiszta beszélt magyar nyelven válaszolj."""
 
 
 async def research(question: str, project_dir: Path, cache: AgentCache | None = None) -> str:

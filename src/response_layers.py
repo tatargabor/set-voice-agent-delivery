@@ -62,7 +62,7 @@ class ResponseLayers:
         """Generate immediate acknowledgment via Haiku."""
         response = await self.client.messages.create(
             model=self.fast_model,
-            system=f"Röviden nyugtázd amit az ügyfél mondott. Max 5 szó. Magyarul. Ne ígérj semmit, csak nyugtázd. Cég: {company_name}.",
+            system=f"Röviden nyugtázd amit az ügyfél mondott. Max 5 szó. Magyarul. Ne ígérj semmit, csak nyugtázd. Ne használj emojikat vagy markdown formázást — ez telefonon lesz felolvasva. Cég: {company_name}.",
             messages=[{"role": "user", "content": customer_text}],
             max_tokens=30,
         )

@@ -297,13 +297,17 @@ async def twilio_media_stream(ws: WebSocket):
             project_context_str = pc.to_prompt_section()
             log.info("project_context_loaded", chars=len(project_context_str))
 
+        outbound_phone = inbound_info.get("outbound_phone", "")
+        is_outbound = bool(outbound_phone)
+
         ctx = CallContext(
             customer_name=customer.get("customer_name", ""),
             company_name=customer.get("company_name", "WebBuilder Kft."),
-            purpose=f"Bejövő hívás — {customer.get('customer_name', 'ismeretlen')} kérdése",
+            purpose=customer.get("purpose", "elkészült a projektje és szeretnénk ha megnézné") if is_outbound else f"Bejövő hívás — {customer.get('customer_name', 'ismeretlen')} kérdése",
             website_url=customer.get("website_url"),
             project_context=project_context_str,
             project_dir=project_dir,
+            call_direction="outbound" if is_outbound else "inbound",
         )
 
         telephony = TwilioTelephonyProvider()

@@ -14,6 +14,7 @@ class CallContext(BaseModel):
     website_url: str | None = None
     project_context: str = ""
     project_dir: str | None = None
+    call_direction: str = "inbound"  # "inbound" | "outbound"
     history: list[dict] = []
 
 
@@ -58,7 +59,21 @@ Szabályok:
 - Ha a projekt kontextusban van releváns info, használd a válaszodban
 - Ha az ügyfél kérdez a projektről és van tool elérhető, használd a file_read, grep_search, openspec_read vagy design_check tool-t a pontos válaszhoz
 - FONTOS: Max 2 mondat válasz! Ez telefon, nem chat. Ha több infó van, foglald össze röviden és kérdezd meg "Részletesebben elmondjam?"
-- Ne olvass fel teljes fájlokat vagy listákat — foglald össze a lényeget"""
+- Ne olvass fel teljes fájlokat vagy listákat — foglald össze a lényeget
+- FONTOS: A válaszod telefonon lesz felolvasva TTS-sel! NE használj markdown formázást (csillag, kettőskereszt, kötőjeles lista), emojikat, kódot, URL-eket. Tiszta beszélt magyar nyelven válaszolj, mintha élőszóban beszélnél."""
+
+    def _greeting_instruction(self, ctx: CallContext) -> str:
+        """Return direction-aware greeting instruction."""
+        if ctx.call_direction == "outbound":
+            return (
+                "(Te hívtad az ügyfelet, ő vette fel. Köszöntsd, mutatkozz be a cég nevében, "
+                "mondd el hogy a hívás rögzítésre kerülhet, majd mondd el miért hívod: "
+                f"{ctx.purpose}. Ne kérdezd hogy miben segíthetsz — te keresed őt.)"
+            )
+        return (
+            "(Az ügyfél hívott minket, te vetted fel. Köszöntsd, mondd el a cég nevét, "
+            "hogy a hívás rögzítésre kerülhet, majd kérdezd meg miben segíthetsz.)"
+        )
 
     async def get_greeting(self, ctx: CallContext) -> tuple[str, dict]:
         """Generate the opening greeting (non-streaming, greeting is short).
@@ -69,7 +84,7 @@ Szabályok:
         response = await self.client.messages.create(
             model=self.model,
             system=self._build_system_prompt(ctx),
-            messages=[{"role": "user", "content": "(Az ügyfél felvette a telefont. Köszöntsd, mondd el hogy a hívás rögzítésre kerülhet, majd térj a tárgyra.)"}],
+            messages=[{"role": "user", "content": self._greeting_instruction(ctx)}],
             max_tokens=150,
         )
         text = response.content[0].text
@@ -85,7 +100,7 @@ Szabályok:
         async with self.client.messages.stream(
             model=self.model,
             system=self._build_system_prompt(ctx),
-            messages=[{"role": "user", "content": "(Az ügyfél felvette a telefont. Köszöntsd, mondd el hogy a hívás rögzítésre kerülhet, majd térj a tárgyra.)"}],
+            messages=[{"role": "user", "content": self._greeting_instruction(ctx)}],
             max_tokens=150,
         ) as stream:
             buffer = ""
