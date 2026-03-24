@@ -4,6 +4,7 @@ contacts:
     company_name: "WebBuilder Kft."
     script: "website_followup"
     website_url: "https://gabor-weboldal.hu"
+    project_dir: "/home/tg/code2/set-voice-agent-delivery"  # demo: this project itself
 
 default:
   customer_name: ""

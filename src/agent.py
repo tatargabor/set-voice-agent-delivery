@@ -12,6 +12,7 @@ class CallContext(BaseModel):
     company_name: str
     purpose: str
     website_url: str | None = None
+    project_context: str = ""
     history: list[dict] = []
 
 
@@ -37,19 +38,24 @@ class ConversationAgent:
         self.last_usage: dict | None = None
 
     def _build_system_prompt(self, ctx: CallContext) -> str:
+        project_section = ""
+        if ctx.project_context:
+            project_section = f"\n\nProjekt információk:\n{ctx.project_context}"
+
         return f"""Te egy ügyfélszolgálati agent vagy a {ctx.company_name} nevében.
 
 Kontextus:
 - Ügyfél neve: {ctx.customer_name}
 - Cél: {ctx.purpose}
-{f'- Weboldal: {ctx.website_url}' if ctx.website_url else ''}
+{f'- Weboldal: {ctx.website_url}' if ctx.website_url else ''}{project_section}
 
 Szabályok:
 - Rövid, természetes válaszok (1-2 mondat max)
 - Magyarul beszélj, természetesen, közvetlenül
 - Ha az ügyfél kér valamit, rögzítsd a record_request tool-lal
 - Ha az ügyfél búcsúzik vagy lezárja, zárd le udvariasan
-- Ne ismételd magad, ne légy túl formális"""
+- Ne ismételd magad, ne légy túl formális
+- Ha a projekt kontextusban van releváns info, használd a válaszodban"""
 
     async def get_greeting(self, ctx: CallContext) -> tuple[str, dict]:
         """Generate the opening greeting (non-streaming, greeting is short).

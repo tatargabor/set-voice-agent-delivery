@@ -17,6 +17,7 @@ from .agent import ConversationAgent, CallContext
 from .caller_lookup import lookup_caller
 from .metrics import CallMetrics, mask_phone
 from .pipeline import CallPipeline
+from .project_context import load_project_context
 from .response_layers import ResponseLayers
 from .providers.soniox_stt import SonioxSTTProvider
 from .providers.google_tts import GoogleTTSProvider
@@ -172,11 +173,20 @@ async def twilio_media_stream(ws: WebSocket):
         call_sid = inbound_info["call_sid"]
         customer = lookup_caller(caller_phone)
 
+        # Load project context if project_dir is configured
+        project_context_str = ""
+        project_dir = customer.get("project_dir")
+        if project_dir:
+            pc = load_project_context(project_dir, customer.get("customer_name", ""))
+            project_context_str = pc.to_prompt_section()
+            log.info("project_context_loaded", chars=len(project_context_str))
+
         ctx = CallContext(
             customer_name=customer.get("customer_name", ""),
             company_name=customer.get("company_name", "WebBuilder Kft."),
             purpose=f"Bejövő hívás — {customer.get('customer_name', 'ismeretlen')} kérdése",
             website_url=customer.get("website_url"),
+            project_context=project_context_str,
         )
 
         telephony = TwilioTelephonyProvider()
