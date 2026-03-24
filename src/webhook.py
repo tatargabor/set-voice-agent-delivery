@@ -87,9 +87,16 @@ async def twilio_media_stream(ws: WebSocket):
         )
 
         # Forward incoming Twilio messages to the telephony provider
+        # Also check if pipeline has ended (call complete)
         try:
             while True:
-                data = await ws.receive_text()
+                try:
+                    data = await asyncio.wait_for(ws.receive_text(), timeout=1.0)
+                except asyncio.TimeoutError:
+                    # Check if pipeline ended while we were waiting
+                    if pipeline_task.done():
+                        break
+                    continue
                 message = json.loads(data)
                 await _telephony.handle_media_message(message)
                 if message.get("event") == "stop":
@@ -98,11 +105,12 @@ async def twilio_media_stream(ws: WebSocket):
             pass  # WebSocket closed
 
         # Wait for pipeline to finish
-        pipeline_task.cancel()
-        try:
-            await pipeline_task
-        except asyncio.CancelledError:
-            pass
+        if not pipeline_task.done():
+            pipeline_task.cancel()
+            try:
+                await pipeline_task
+            except asyncio.CancelledError:
+                pass
 
     except Exception as e:
         log.error("media_stream_error", error=str(e))
