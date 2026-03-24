@@ -154,6 +154,64 @@ async def twilio_token(request: Request, identity: str = "browser-user"):
     return JSONResponse({"token": token.to_jwt()})
 
 
+@app.post("/api/call")
+async def api_call(request: Request):
+    """Initiate outbound phone call from widget."""
+    data = await request.json()
+    phone = data.get("phone", "")
+    project_id = data.get("project", "")
+    identity = data.get("identity", "")
+
+    if not phone:
+        return JSONResponse({"error": "Phone number required"}, status_code=400)
+
+    host = request.headers.get("host", "localhost:8765")
+    public_url = f"https://{host}"
+
+    # Store call info for the media stream handler
+    app.state.pending_inbound = {
+        "caller_phone": phone,
+        "call_sid": "",  # Will be updated after call creation
+        "project_id": project_id,
+        "outbound_phone": phone,
+    }
+
+    try:
+        from twilio.rest import Client
+        client = Client()
+        call = client.calls.create(
+            to=phone,
+            from_=os.environ.get("TWILIO_PHONE_NUMBER", ""),
+            url=f"{public_url}/twilio/voice-outbound",
+        )
+        app.state.pending_inbound["call_sid"] = call.sid
+        log.info("api_call_initiated", phone=phone, call_sid=call.sid, project=project_id)
+        return JSONResponse({"status": "calling", "call_sid": call.sid})
+    except Exception as e:
+        log.error("api_call_error", error=str(e))
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.post("/twilio/voice-outbound")
+async def twilio_voice_outbound(request: Request):
+    """TwiML for outbound calls initiated from the widget."""
+    host = request.headers.get("host", "localhost:8765")
+    ws_url = f"wss://{host}/twilio/media-stream"
+    call_id = ""
+    if hasattr(app.state, "pending_inbound"):
+        call_id = app.state.pending_inbound.get("call_sid", "")
+    twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Connect>
+        <Stream url="{ws_url}">
+            <Parameter name="callId" value="{call_id}" />
+        </Stream>
+    </Connect>
+</Response>"""
+    log.info("outbound_twiml", ws_url=ws_url, call_id=call_id)
+    return Response(content=twiml, media_type="application/xml")
+
+
 @app.post("/twilio/voice")
 async def twilio_voice(request: Request):
     """Return TwiML that starts a Media Stream, or reject if busy."""
@@ -179,15 +237,19 @@ async def twilio_voice(request: Request):
         call_sid = form.get("CallSid", "")
         log.info("inbound_call", caller=caller_phone, call_sid=call_sid)
 
-        # Get project from custom params (sent by browser widget)
+        # Get project and phone from custom params (sent by browser widget)
         project_id = form.get("project", "") or form.get("Project", "")
+        outbound_phone = form.get("phone", "")
 
         # Store for the WebSocket handler
         app.state.pending_inbound = {
             "caller_phone": caller_phone,
             "call_sid": call_sid,
             "project_id": project_id,
+            "outbound_phone": outbound_phone,
         }
+
+        pass  # outbound_phone handled via /api/call REST endpoint
 
     call_id = ""
     if _outbound_call_id:

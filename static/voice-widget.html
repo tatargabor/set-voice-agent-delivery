@@ -87,7 +87,20 @@
             <input type="text" id="identity" placeholder="Az Ön neve (opcionális)">
         </div>
 
-        <button id="call-btn" disabled>&#x1F3A4;</button>
+        <div class="form-row">
+            <input type="tel" id="phone" placeholder="Telefonszám (opcionális, pl. +36...)">
+        </div>
+
+        <div style="display:flex; gap:20px; justify-content:center; margin-bottom:24px;">
+            <div style="text-align:center">
+                <button id="call-btn" disabled>&#x1F3A4;</button>
+                <div style="font-size:0.75rem; color:#999; margin-top:8px;">Böngésző</div>
+            </div>
+            <div style="text-align:center">
+                <button id="phone-btn" style="width:120px;height:120px;border-radius:50%;border:none;background:#3b82f6;color:white;font-size:48px;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;justify-content:center;" disabled>&#x1F4DE;</button>
+                <div style="font-size:0.75rem; color:#999; margin-top:8px;">Telefon</div>
+            </div>
+        </div>
 
         <div id="status">Inicializálás...</div>
     </div>

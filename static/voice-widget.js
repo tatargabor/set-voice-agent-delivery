@@ -3,9 +3,11 @@
  */
 
 const callBtn = document.getElementById('call-btn');
+const phoneBtn = document.getElementById('phone-btn');
 const statusEl = document.getElementById('status');
 const identityInput = document.getElementById('identity');
 const projectSelect = document.getElementById('project');
+const phoneInput = document.getElementById('phone');
 
 let device = null;
 let activeCall = null;
@@ -81,6 +83,7 @@ async function startCall() {
 
         const identity = identityInput.value.trim() || 'browser-user';
         const project = projectSelect.value;
+        const phone = phoneInput.value.trim();
 
         if (!device) {
             await initDevice();
@@ -124,6 +127,55 @@ async function startCall() {
 }
 
 callBtn.addEventListener('click', startCall);
+
+async function startPhoneCall() {
+    const phone = phoneInput.value.trim();
+    if (!phone) {
+        setStatus('Adjon meg telefonszámot!', 'error');
+        return;
+    }
+
+    const project = projectSelect.value;
+    const identity = identityInput.value.trim() || 'browser-user';
+
+    phoneBtn.disabled = true;
+    phoneBtn.style.background = '#f59e0b';
+    setStatus('Tárcsázás...', '');
+
+    try {
+        const resp = await fetch('/api/call', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phone, project, identity }),
+        });
+        const data = await resp.json();
+        if (data.error) {
+            setStatus(`Hiba: ${data.error}`, 'error');
+            phoneBtn.disabled = false;
+            phoneBtn.style.background = '#3b82f6';
+        } else {
+            setStatus(`Hívás indítva: ${phone}`, 'active');
+            phoneBtn.style.background = '#ef4444';
+            phoneBtn.disabled = false;
+            // Reset after 60s
+            setTimeout(() => {
+                phoneBtn.style.background = '#3b82f6';
+                setStatus('Kész — válasszon projektet és nyomja meg a gombot');
+            }, 60000);
+        }
+    } catch (err) {
+        setStatus(`Hiba: ${err.message}`, 'error');
+        phoneBtn.disabled = false;
+        phoneBtn.style.background = '#3b82f6';
+    }
+}
+
+phoneBtn.addEventListener('click', startPhoneCall);
+
+// Enable phone button when phone input has value
+phoneInput.addEventListener('input', () => {
+    phoneBtn.disabled = !phoneInput.value.trim();
+});
 
 // Initialize
 loadProjects();
