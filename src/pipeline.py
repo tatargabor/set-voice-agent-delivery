@@ -127,7 +127,9 @@ class CallPipeline:
             if not self._tts_cancel_event.is_set() and not self.state_machine.is_ended:
                 # Wait for Twilio to actually finish playing the audio
                 await self.telephony.send_mark(call_id)
-                await self._transition(CallState.LISTENING, reason="tts complete")
+                # Only transition if still in SPEAKING (barge-in may have changed state)
+                if self._state == CallState.SPEAKING:
+                    await self._transition(CallState.LISTENING, reason="tts complete")
 
     async def run(self, ctx: CallContext, call_id: str) -> None:
         """Run the full call pipeline.
@@ -150,11 +152,15 @@ class CallPipeline:
             self.metrics.add_claude_usage(greeting_usage["input_tokens"], greeting_usage["output_tokens"])
             self.metrics.tts_chars += len(greeting)
 
+        greeting_audio_bytes = 0
         async for audio_chunk in self.tts.synthesize_stream(greeting):
             await self.telephony.send_audio(call_id, audio_chunk)
+            greeting_audio_bytes += len(audio_chunk)
 
-        # Wait for Twilio to finish playing the greeting
-        await self.telephony.send_mark(call_id)
+        # Wait for greeting playback — can't use mark here (same thread as webhook
+        # forwarding loop = deadlock). Estimate from audio size: mulaw 8kHz = 1 byte/sample.
+        greeting_duration = greeting_audio_bytes / 8000
+        await asyncio.sleep(greeting_duration)
         await self._transition(CallState.LISTENING, reason="greeting complete")
 
         # Run the three concurrent loops
