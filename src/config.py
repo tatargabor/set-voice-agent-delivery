@@ -17,6 +17,12 @@ class ModelsConfig(BaseModel):
     agent: str = "claude-sonnet-4-6"
 
 
+class TTSConfig(BaseModel):
+    voice_name: str = "hu-HU-Chirp3-HD-Achernar"
+    language_code: str = "hu-HU"
+    sample_rate: int = 8000
+
+
 class VoiceConfig(BaseModel):
     max_sentences: int = 3
     max_tokens_tool_use: int = 150
@@ -35,6 +41,7 @@ class ResearchConfig(BaseModel):
 class AppSettings(BaseModel):
     """Application settings loaded from config.yaml."""
     models: ModelsConfig = ModelsConfig()
+    tts: TTSConfig = TTSConfig()
     voice: VoiceConfig = VoiceConfig()
     research: ResearchConfig = ResearchConfig()
     projects_dir: str = "/home/tg/code2"

@@ -6,6 +6,11 @@ models:
   deep: claude-sonnet-4-6       # Deep response + tool_use
   agent: claude-sonnet-4-6      # Local agent research
 
+tts:
+  voice_name: hu-HU-Chirp3-HD-Achernar  # hu-HU-Wavenet-B | hu-HU-Chirp3-HD-* (30 hang)
+  language_code: hu-HU
+  sample_rate: 8000
+
 voice:
   max_sentences: 3              # Max sentences per response
   max_tokens_tool_use: 150      # Deep layer with tool_use

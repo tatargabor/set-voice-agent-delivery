@@ -18,13 +18,15 @@ class GoogleTTSProvider(TTSProvider):
 
     def __init__(
         self,
-        language_code: str = "hu-HU",
-        voice_name: str = "hu-HU-Wavenet-B",
-        sample_rate: int = 8000,
+        language_code: str | None = None,
+        voice_name: str | None = None,
+        sample_rate: int | None = None,
     ):
-        self._language_code = language_code
-        self._voice_name = voice_name
-        self._sample_rate = sample_rate
+        from ..config import get_settings
+        tts_cfg = get_settings().tts
+        self._language_code = language_code or tts_cfg.language_code
+        self._voice_name = voice_name or tts_cfg.voice_name
+        self._sample_rate = sample_rate or tts_cfg.sample_rate
         self._client: texttospeech.TextToSpeechClient | None = None
 
     async def connect(self) -> None:
