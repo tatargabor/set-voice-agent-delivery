@@ -94,8 +94,10 @@ class CallPipeline:
 
             if self.agent.should_hangup(response):
                 await self._tts_queue.put(response)
-                # Wait for TTS to finish the farewell before ending
+                # Wait for TTS to send the farewell audio
                 await self._tts_queue.join()
+                # Brief pause to let Twilio play the farewell
+                await asyncio.sleep(3)
                 await self._transition(CallState.ENDED, reason="agent farewell")
                 break
 
@@ -158,9 +160,13 @@ class CallPipeline:
             greeting_audio_bytes += len(audio_chunk)
 
         # Wait for greeting playback — can't use mark here (same thread as webhook
-        # forwarding loop = deadlock). Estimate from audio size: mulaw 8kHz = 1 byte/sample.
-        greeting_duration = greeting_audio_bytes / 8000
-        await asyncio.sleep(greeting_duration)
+        # forwarding loop = deadlock). Estimate from audio size.
+        # Google TTS returns WAV (44 byte header) with mulaw 8kHz (1 byte/sample).
+        audio_data_bytes = max(0, greeting_audio_bytes - 44)
+        greeting_duration = audio_data_bytes / 8000
+        # Subtract time already elapsed during send + Twilio buffering (~1 sec head start)
+        wait_time = max(0, greeting_duration - 1.0)
+        await asyncio.sleep(wait_time)
         await self._transition(CallState.LISTENING, reason="greeting complete")
 
         # Run the three concurrent loops
@@ -179,5 +185,13 @@ class CallPipeline:
         finally:
             await self.stt.disconnect()
             await self.tts.disconnect()
+
+        # Hang up the call after pipeline ends
+        if self.state_machine.is_ended:
+            try:
+                await self.telephony.hangup(call_id)
+                log.info("call_hangup", call_id=call_id)
+            except Exception:
+                pass  # May already be disconnected
 
         log.info("pipeline_end", call_id=call_id, turns=len(ctx.history))
