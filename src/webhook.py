@@ -3,11 +3,15 @@
 import asyncio
 import base64
 import json
+import os
 import threading
 from datetime import datetime
 import structlog
 from fastapi import FastAPI, WebSocket, Request
-from fastapi.responses import Response
+from fastapi.responses import Response, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+from pathlib import Path
 
 from .agent import ConversationAgent, CallContext
 from .caller_lookup import lookup_caller
@@ -20,6 +24,19 @@ from .providers.twilio_provider import TwilioTelephonyProvider
 log = structlog.get_logger()
 
 app = FastAPI()
+
+# CORS for browser widget embedding
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
+
+# Serve static files (voice widget)
+_static_dir = Path(__file__).parent.parent / "static"
+if _static_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
 
 # --- Outbound mode: pre-configured state (set by call_runner) ---
 _outbound_context: CallContext | None = None
@@ -59,6 +76,31 @@ def enable_inbound_mode(done_event: threading.Event | None = None) -> None:
     global _inbound_mode, _inbound_done
     _inbound_mode = True
     _inbound_done = done_event
+
+
+@app.get("/twilio/token")
+async def twilio_token(request: Request, identity: str = "browser-user"):
+    """Generate Twilio Access Token for browser voice client."""
+    from twilio.jwt.access_token import AccessToken
+    from twilio.jwt.access_token.grants import VoiceGrant
+
+    account_sid = os.environ.get("TWILIO_ACCOUNT_SID", "")
+    api_key_sid = os.environ.get("TWILIO_API_KEY_SID", "")
+    api_key_secret = os.environ.get("TWILIO_API_KEY_SECRET", "")
+    twiml_app_sid = os.environ.get("TWILIO_TWIML_APP_SID", "")
+
+    if not all([account_sid, api_key_sid, api_key_secret, twiml_app_sid]):
+        return JSONResponse(
+            {"error": "Twilio browser client not configured. Run: python -m src.twilio_setup"},
+            status_code=500,
+        )
+
+    token = AccessToken(account_sid, api_key_sid, api_key_secret, identity=identity, ttl=3600)
+    voice_grant = VoiceGrant(outgoing_application_sid=twiml_app_sid)
+    token.add_grant(voice_grant)
+
+    log.info("token_generated", identity=identity)
+    return JSONResponse({"token": token.to_jwt()})
 
 
 @app.post("/twilio/voice")

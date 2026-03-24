@@ -44,3 +44,36 @@ default:
 def test_missing_file(tmp_path):
     result = lookup_caller("+36301234567", tmp_path / "nonexistent.yaml")
     assert result["customer_name"] == ""
+
+
+def test_browser_identity(tmp_path):
+    """Browser calls use client:name format."""
+    contacts = tmp_path / "contacts.yaml"
+    contacts.write_text("""
+contacts:
+  "+36301234567":
+    customer_name: "Test User"
+    company_name: "Test Co"
+    script: "website_followup"
+
+default:
+  customer_name: ""
+  company_name: "Default Co"
+  script: "website_followup"
+""")
+    result = lookup_caller("client:Test User", contacts)
+    assert result["customer_name"] == "Test User"
+    assert result["company_name"] == "Test Co"
+
+
+def test_browser_unknown_identity(tmp_path):
+    contacts = tmp_path / "contacts.yaml"
+    contacts.write_text("""
+contacts: {}
+default:
+  customer_name: ""
+  company_name: "Default Co"
+  script: "website_followup"
+""")
+    result = lookup_caller("client:unknown", contacts)
+    assert result["company_name"] == "Default Co"
