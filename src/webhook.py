@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 
+from .config import get_settings
 from .agent import ConversationAgent, CallContext
 from .caller_lookup import lookup_caller
 from .metrics import CallMetrics, mask_phone
@@ -95,7 +96,6 @@ def _resolve_project_dir(project_id: str) -> str | None:
     except (subprocess.TimeoutExpired, FileNotFoundError):
         pass
     # Fallback: try projects_dir/name
-    from .config import get_settings
     fallback = Path(get_settings().projects_dir) / project_id
     return str(fallback) if fallback.exists() else None
 
@@ -119,7 +119,6 @@ async def list_projects():
                 projects.append({"id": name, "label": name, "path": path})
     except (subprocess.TimeoutExpired, FileNotFoundError):
         # Fallback: scan projects_dir
-        from .config import get_settings
         code_dir = Path(get_settings().projects_dir)
         if code_dir.exists():
             for d in sorted(code_dir.iterdir()):
@@ -322,7 +321,7 @@ async def twilio_media_stream(ws: WebSocket):
         if _inbound_mode:
             _inbound_busy = False
             # Log the inbound call
-            if _inbound_mode and hasattr(pipeline, 'metrics') and pipeline.metrics:
+            if pipeline and hasattr(pipeline, 'metrics') and pipeline.metrics:
                 from .logger import CallLogger
                 call_logger = CallLogger()
                 call_logger.save(pipeline.metrics, ctx.history, outcome="completed")
