@@ -191,15 +191,13 @@ class CallPipeline:
         await self.stt.connect()
         await self.tts.connect()
 
-        # Stream greeting sentence-by-sentence
-        greeting_audio_bytes = 0
+        # Stream greeting sentence-by-sentence — send audio immediately, no sleep
         async for sentence in self.agent.get_greeting_stream(ctx):
             log.info("greeting_chunk", text=sentence)
             if self.metrics:
                 self.metrics.tts_chars += len(sentence)
             async for audio_chunk in self.tts.synthesize_stream(sentence):
                 await self.telephony.send_audio(call_id, audio_chunk)
-                greeting_audio_bytes += len(audio_chunk)
 
         # Track greeting usage
         if self.agent.last_usage and self.metrics:
@@ -208,11 +206,10 @@ class CallPipeline:
                 self.agent.last_usage["output_tokens"],
             )
 
-        # Wait for greeting playback (audio is raw mulaw 8kHz = 1 byte/sample)
-        greeting_duration = greeting_audio_bytes / 8000
-        wait_time = max(0, greeting_duration - 1.0)
-        await asyncio.sleep(wait_time)
-        await self._transition(CallState.LISTENING, reason="greeting complete")
+        # Transition to LISTENING immediately — Twilio buffers and plays the greeting
+        # while we already start listening. If the customer speaks during the greeting,
+        # the STT loop picks it up (barge-in handles it).
+        await self._transition(CallState.LISTENING, reason="greeting sent")
 
         # Run the three concurrent loops
         try:
