@@ -87,6 +87,7 @@ class TwilioTelephonyProvider(TelephonyProvider):
             "media": {"payload": payload},
         })
         await self._ws.send_text(message)
+        log.debug("audio_sent", bytes=len(audio))
 
     async def send_mark(self, call_id: str) -> None:
         """Send a mark and wait for Twilio to confirm playback completion.
