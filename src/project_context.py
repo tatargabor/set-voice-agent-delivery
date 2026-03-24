@@ -58,13 +58,23 @@ def load_project_context(
     if not project_dir.exists():
         return ctx
 
-    # 1. Project summary — README.md or CLAUDE.md (first 2000 chars)
-    for readme in ["CLAUDE.md", "README.md"]:
-        readme_path = project_dir / readme
-        if readme_path.exists():
-            text = readme_path.read_text(errors="ignore")[:2000]
-            ctx.project_summary = text.strip()
-            break
+    # 1. Project summary — prefer README.md, fallback to pyproject.toml description
+    readme_path = project_dir / "README.md"
+    pyproject_path = project_dir / "pyproject.toml"
+    if readme_path.exists():
+        text = readme_path.read_text(errors="ignore")[:2000]
+        ctx.project_summary = text.strip()
+    elif pyproject_path.exists():
+        # Extract name and description from pyproject.toml
+        content = pyproject_path.read_text(errors="ignore")
+        name_match = re.search(r'name\s*=\s*"(.+?)"', content)
+        desc_match = re.search(r'description\s*=\s*"(.+?)"', content)
+        parts = []
+        if name_match:
+            parts.append(f"Projekt: {name_match.group(1)}")
+        if desc_match:
+            parts.append(desc_match.group(1))
+        ctx.project_summary = "\n".join(parts)
 
     # 2. OpenSpec specs — list names + first requirement
     specs_dir = project_dir / "openspec" / "specs"
