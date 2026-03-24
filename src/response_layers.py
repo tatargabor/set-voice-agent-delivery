@@ -106,7 +106,7 @@ class ResponseLayers:
                 model=self.deep_model,
                 system=system_prompt,
                 messages=messages,
-                max_tokens=300,
+                max_tokens=150,
                 tools=TOOL_DEFINITIONS,
             )
 
@@ -152,6 +152,11 @@ class ResponseLayers:
                         buffer = ""
                 if buffer.strip():
                     sentences.append(buffer.strip())
+                # Voice limit: max 3 sentences, suggest follow-up
+                _MAX_VOICE_SENTENCES = 3
+                if len(sentences) > _MAX_VOICE_SENTENCES:
+                    sentences = sentences[:_MAX_VOICE_SENTENCES]
+                    sentences.append("Szeretnéd, hogy részletesebben elmondjam?")
                 return sentences
 
         # Timeout fallback — return whatever text blocks we got from last response

@@ -56,7 +56,9 @@ Szabályok:
 - Ha az ügyfél búcsúzik vagy lezárja, zárd le udvariasan
 - Ne ismételd magad, ne légy túl formális
 - Ha a projekt kontextusban van releváns info, használd a válaszodban
-- Ha az ügyfél kérdez a projektről és van tool elérhető, használd a file_read, grep_search, openspec_read vagy design_check tool-t a pontos válaszhoz"""
+- Ha az ügyfél kérdez a projektről és van tool elérhető, használd a file_read, grep_search, openspec_read vagy design_check tool-t a pontos válaszhoz
+- FONTOS: Max 2 mondat válasz! Ez telefon, nem chat. Ha több infó van, foglald össze röviden és kérdezd meg "Részletesebben elmondjam?"
+- Ne olvass fel teljes fájlokat vagy listákat — foglald össze a lényeget"""
 
     async def get_greeting(self, ctx: CallContext) -> tuple[str, dict]:
         """Generate the opening greeting (non-streaming, greeting is short).
