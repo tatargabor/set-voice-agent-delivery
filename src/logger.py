@@ -74,16 +74,15 @@ class CallLogger:
             "errors": metrics.errors,
         }
 
-        # Write to file
+        # Write to file — format: YYYY-MM-DD_HH-MM-SS_customer.json
+        datetime_str = metrics.timestamp_start.strftime("%Y-%m-%d_%H-%M-%S")
+        name_slug = re.sub(r"[^a-z0-9]", "", metrics.customer_name.lower())[:20] or "anonymous"
         date_str = metrics.timestamp_start.strftime("%Y-%m-%d")
-        time_str = metrics.timestamp_start.strftime("%H-%M")
-        name_slug = re.sub(r"[^a-z0-9]", "", metrics.customer_name.lower())[:20]
-        sid_short = metrics.call_id[:10] if len(metrics.call_id) > 10 else metrics.call_id
 
         day_dir = self._logs_dir / date_str
         day_dir.mkdir(parents=True, exist_ok=True)
 
-        filename = f"{sid_short}_{name_slug}_{time_str}.json"
+        filename = f"{datetime_str}_{name_slug}.json"
         filepath = day_dir / filename
 
         with open(filepath, "w", encoding="utf-8") as f:
