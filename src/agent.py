@@ -36,8 +36,12 @@ Szabályok:
 - Ha az ügyfél búcsúzik vagy lezárja, zárd le udvariasan
 - Ne ismételd magad, ne légy túl formális"""
 
-    async def get_greeting(self, ctx: CallContext) -> str:
-        """Generate the opening greeting."""
+    async def get_greeting(self, ctx: CallContext) -> tuple[str, dict]:
+        """Generate the opening greeting.
+
+        Returns:
+            Tuple of (text, usage_dict) where usage_dict has input_tokens and output_tokens.
+        """
         response = await self.client.messages.create(
             model=self.model,
             system=self._build_system_prompt(ctx),
@@ -45,11 +49,16 @@ Szabályok:
             max_tokens=150,
         )
         text = response.content[0].text
+        usage = {"input_tokens": response.usage.input_tokens, "output_tokens": response.usage.output_tokens}
         ctx.history.append({"role": "assistant", "content": text})
-        return text
+        return text, usage
 
-    async def respond(self, ctx: CallContext, customer_text: str) -> str:
-        """Generate response to customer speech."""
+    async def respond(self, ctx: CallContext, customer_text: str) -> tuple[str, dict]:
+        """Generate response to customer speech.
+
+        Returns:
+            Tuple of (text, usage_dict) where usage_dict has input_tokens and output_tokens.
+        """
         ctx.history.append({"role": "user", "content": customer_text})
 
         response = await self.client.messages.create(
@@ -59,8 +68,9 @@ Szabályok:
             max_tokens=150,
         )
         text = response.content[0].text
+        usage = {"input_tokens": response.usage.input_tokens, "output_tokens": response.usage.output_tokens}
         ctx.history.append({"role": "assistant", "content": text})
-        return text
+        return text, usage
 
     def should_hangup(self, agent_text: str) -> bool:
         """Check if the agent's response signals end of call."""

@@ -20,7 +20,7 @@ async def main():
     )
 
     # Agent greeting
-    greeting = await agent.get_greeting(ctx)
+    greeting, _ = await agent.get_greeting(ctx)
     print(f"\nAgent: {greeting}")
 
     # Conversation loop
@@ -34,7 +34,7 @@ async def main():
         if user_input.strip().lower() in ("quit", "exit", "q"):
             break
 
-        response = await agent.respond(ctx, user_input)
+        response, _ = await agent.respond(ctx, user_input)
         print(f"Agent: {response}")
 
         if agent.should_hangup(response):

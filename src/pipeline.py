@@ -1,9 +1,11 @@
 """Call pipeline — orchestrates STT → Claude → TTS audio loop."""
 
 import asyncio
+import time
 import structlog
 
 from .agent import ConversationAgent, CallContext
+from .metrics import CallMetrics
 from .state import CallState, CallStateMachine
 from .providers.base import STTProvider, TTSProvider, TelephonyProvider
 
@@ -19,11 +21,13 @@ class CallPipeline:
         tts: TTSProvider,
         telephony: TelephonyProvider,
         agent: ConversationAgent,
+        metrics: CallMetrics | None = None,
     ):
         self.stt = stt
         self.tts = tts
         self.telephony = telephony
         self.agent = agent
+        self.metrics = metrics
         self.state_machine = CallStateMachine()
         self._state_lock = asyncio.Lock()
 
@@ -55,6 +59,8 @@ class CallPipeline:
                 # Barge-in: customer spoke while agent was speaking
                 log.info("barge_in_detected", transcript=transcript)
                 self._tts_cancel_event.set()
+                if self.metrics:
+                    self.metrics.barge_in_count += 1
                 await self._transition(CallState.LISTENING, reason="barge-in")
 
             if self._state == CallState.LISTENING:
@@ -73,8 +79,17 @@ class CallPipeline:
                 continue
 
             log.info("processing_transcript", text=transcript)
-            response = await self.agent.respond(ctx, transcript)
+
+            t0 = time.monotonic()
+            response, usage = await self.agent.respond(ctx, transcript)
+            elapsed_ms = int((time.monotonic() - t0) * 1000)
+
             log.info("agent_response", text=response)
+
+            if self.metrics:
+                self.metrics.add_claude_usage(usage["input_tokens"], usage["output_tokens"])
+                self.metrics.response_times_ms.append(elapsed_ms)
+                self.metrics.turn_count += 1
 
             if self.agent.should_hangup(response):
                 await self._tts_queue.put(response)
@@ -92,6 +107,9 @@ class CallPipeline:
                 text = await asyncio.wait_for(self._tts_queue.get(), timeout=1.0)
             except asyncio.TimeoutError:
                 continue
+
+            if self.metrics:
+                self.metrics.tts_chars += len(text)
 
             await self._transition(CallState.SPEAKING, reason="tts start")
             self._tts_cancel_event.clear()
@@ -122,8 +140,12 @@ class CallPipeline:
         await self.tts.connect()
 
         # Generate and speak greeting
-        greeting = await self.agent.get_greeting(ctx)
+        greeting, greeting_usage = await self.agent.get_greeting(ctx)
         log.info("greeting_generated", text=greeting)
+
+        if self.metrics:
+            self.metrics.add_claude_usage(greeting_usage["input_tokens"], greeting_usage["output_tokens"])
+            self.metrics.tts_chars += len(greeting)
 
         async for audio_chunk in self.tts.synthesize_stream(greeting):
             await self.telephony.send_audio(call_id, audio_chunk)
@@ -141,6 +163,8 @@ class CallPipeline:
             for exc in eg.exceptions:
                 if not isinstance(exc, asyncio.CancelledError):
                     log.error("pipeline_error", error=str(exc), type=type(exc).__name__)
+                    if self.metrics:
+                        self.metrics.add_error(type(exc).__name__, str(exc))
         finally:
             await self.stt.disconnect()
             await self.tts.disconnect()

@@ -21,11 +21,14 @@ import threading
 import time
 import structlog
 import uvicorn
+from datetime import datetime
 
 from .config import validate_config
 from .script_loader import load_script
 from .safety import CallSafety
 from .agent import ConversationAgent
+from .metrics import CallMetrics, mask_phone, calculate_costs
+from .logger import CallLogger
 from .pipeline import CallPipeline
 from .providers.soniox_stt import SonioxSTTProvider
 from .providers.google_tts import GoogleTTSProvider
@@ -82,54 +85,92 @@ async def run_call(args):
     safety.pre_call_check(args.phone)
     log.info("safety_checks_passed")
 
-    # 4. Initialize providers (STT/TTS connect inside pipeline.run() to stay in the right event loop)
+    # 4. Initialize providers
     stt = SonioxSTTProvider()
     tts = GoogleTTSProvider()
     telephony = TwilioTelephonyProvider()
     agent = ConversationAgent()
 
-    try:
-        # 5. Build pipeline
-        pipeline = CallPipeline(stt=stt, tts=tts, telephony=telephony, agent=agent)
+    outcome = "error"  # default, updated on success
 
-        # 6. Start webhook server
+    try:
+        # 5. Create metrics
+        metrics = CallMetrics(
+            call_id="pending",
+            timestamp_start=datetime.now(),
+            customer_name=args.customer_name,
+            script_name=args.script,
+            phone_masked=mask_phone(args.phone),
+        )
+
+        # 6. Build pipeline with metrics
+        pipeline = CallPipeline(stt=stt, tts=tts, telephony=telephony, agent=agent, metrics=metrics)
+
+        # 7. Start webhook server
         _start_server(args.webhook_host, args.webhook_port)
         webhook_url = f"{args.public_url}/twilio/voice"
         log.info("webhook_server_started", url=webhook_url)
 
-        # 7. Place call
+        # 8. Place call
         call_id = await telephony.place_call(args.phone, webhook_url)
+        metrics.call_id = call_id
         log.info("call_placed", call_id=call_id, phone=args.phone)
 
-        # 8. Configure webhook with pipeline state
+        # 9. Configure webhook with pipeline state
         done_event = asyncio.Event()
         webhook.configure(ctx, pipeline, telephony, call_id, done_event)
 
-        # 9. Wait for call to complete
+        # 10. Wait for call to complete
         await done_event.wait()
         log.info("call_completed")
+        outcome = "completed"
 
-        # 10. Hangup
+        # 11. Hangup
         try:
             await telephony.hangup(call_id)
         except Exception:
             pass  # May already be hung up
 
-        # 11. Check for DNC request in transcript
+        # 12. Check for DNC request in transcript
         for msg in ctx.history:
             if msg["role"] == "user":
                 text_lower = msg["content"].lower()
                 if any(phrase in text_lower for phrase in DNC_PHRASES):
                     safety.add_to_dnc(args.phone)
                     log.info("dnc_request_detected", phone=args.phone)
+                    outcome = "dnc"
                     break
 
-        # 12. Print transcript
+        # 13. Fetch Twilio call price
+        try:
+            call_details = telephony._client.calls(call_id).fetch()
+            if call_details.price:
+                metrics.twilio_price = float(call_details.price)
+            if call_details.duration:
+                metrics.twilio_duration_sec = int(call_details.duration)
+        except Exception as e:
+            log.warning("twilio_price_fetch_failed", error=str(e))
+
+        # 14. Save call log
+        call_logger = CallLogger()
+        filepath = call_logger.save(metrics, ctx.history, outcome=outcome)
+        log.info("call_logged", path=str(filepath))
+
+        # 15. Print transcript
         print("\n--- Transcript ---")
         for msg in ctx.history:
             role = "Agent" if msg["role"] == "assistant" else "Ügyfél"
             print(f"  {role}: {msg['content']}")
-        print(f"\n--- Hívás vége ({len(ctx.history)} üzenet) ---")
+
+        # 16. Print cost summary
+        costs = calculate_costs(metrics)
+        print(f"\n--- Költség ---")
+        print(f"  Twilio:     ${costs['twilio']:.4f}")
+        print(f"  Claude:     ${costs['claude']:.4f}")
+        print(f"  Google TTS: ${costs['google_tts']:.6f}")
+        print(f"  Soniox STT: ${costs['soniox_stt']:.6f}")
+        print(f"  ÖSSZESEN:   ${costs['total']:.4f}")
+        print(f"\n--- Hívás vége ({len(ctx.history)} üzenet, log: {filepath.name}) ---")
 
     finally:
         pass  # STT/TTS disconnect handled by pipeline.run()

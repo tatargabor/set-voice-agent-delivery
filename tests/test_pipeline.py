@@ -90,7 +90,7 @@ async def test_agent_response_to_audio(call_context):
 
         # Get agent greeting first, then respond to customer
         await agent.get_greeting(call_context)
-        response = await agent.respond(call_context, customer_text)
+        response, _ = await agent.respond(call_context, customer_text)
         assert len(response) > 5, f"Agent should give meaningful response, got: {response}"
 
         # Synthesize agent response back to audio
