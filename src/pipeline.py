@@ -59,6 +59,7 @@ class CallPipeline:
                 # Barge-in: customer spoke while agent was speaking
                 log.info("barge_in_detected", transcript=transcript)
                 self._tts_cancel_event.set()
+                await self.telephony.clear_audio(call_id)
                 if self.metrics:
                     self.metrics.barge_in_count += 1
                 await self._transition(CallState.LISTENING, reason="barge-in")
@@ -124,6 +125,8 @@ class CallPipeline:
                 self._tts_queue.task_done()
 
             if not self._tts_cancel_event.is_set() and not self.state_machine.is_ended:
+                # Wait for Twilio to actually finish playing the audio
+                await self.telephony.send_mark(call_id)
                 await self._transition(CallState.LISTENING, reason="tts complete")
 
     async def run(self, ctx: CallContext, call_id: str) -> None:
@@ -150,6 +153,8 @@ class CallPipeline:
         async for audio_chunk in self.tts.synthesize_stream(greeting):
             await self.telephony.send_audio(call_id, audio_chunk)
 
+        # Wait for Twilio to finish playing the greeting
+        await self.telephony.send_mark(call_id)
         await self._transition(CallState.LISTENING, reason="greeting complete")
 
         # Run the three concurrent loops

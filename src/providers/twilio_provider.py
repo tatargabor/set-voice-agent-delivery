@@ -4,11 +4,17 @@ import asyncio
 import base64
 import json
 import os
+import structlog
 from typing import AsyncIterator
 
 from twilio.rest import Client as TwilioClient
 
 from .base import TelephonyProvider
+
+log = structlog.get_logger()
+
+# Timeout waiting for Twilio mark confirmation
+_MARK_TIMEOUT_SEC = 5.0
 
 
 class TwilioTelephonyProvider(TelephonyProvider):
@@ -23,17 +29,12 @@ class TwilioTelephonyProvider(TelephonyProvider):
         self._ws = None
         self._audio_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
         self._stream_sid: str | None = None
+        # Mark event tracking
+        self._mark_futures: dict[str, asyncio.Future] = {}
+        self._mark_counter: int = 0
 
     async def place_call(self, phone_number: str, webhook_url: str) -> str:
-        """Place an outbound call via Twilio REST API.
-
-        Args:
-            phone_number: The number to call (E.164 format).
-            webhook_url: URL Twilio will POST to when the call connects.
-
-        Returns:
-            The Twilio Call SID.
-        """
+        """Place an outbound call via Twilio REST API."""
         call = self._client.calls.create(
             to=phone_number,
             from_=self._from_number,
@@ -46,23 +47,24 @@ class TwilioTelephonyProvider(TelephonyProvider):
         self._client.calls(call_id).update(status="completed")
 
     def set_websocket(self, ws, stream_sid: str) -> None:
-        """Set the Media Streams WebSocket connection.
-
-        Called by the webhook server when Twilio connects.
-        """
+        """Set the Media Streams WebSocket connection."""
         self._ws = ws
         self._stream_sid = stream_sid
 
     async def handle_media_message(self, message: dict) -> None:
-        """Process an incoming Media Streams message.
-
-        Called by the webhook server for each WebSocket message from Twilio.
-        """
+        """Process an incoming Media Streams message."""
         event = message.get("event")
         if event == "media":
             payload = message["media"]["payload"]
             audio_bytes = base64.b64decode(payload)
             await self._audio_queue.put(audio_bytes)
+        elif event == "mark":
+            name = message.get("mark", {}).get("name", "")
+            if name in self._mark_futures:
+                fut = self._mark_futures.pop(name)
+                if not fut.done():
+                    fut.set_result(True)
+                log.debug("mark_received", name=name)
         elif event == "stop":
             await self._audio_queue.put(None)
 
@@ -86,3 +88,45 @@ class TwilioTelephonyProvider(TelephonyProvider):
             "media": {"payload": payload},
         })
         await self._ws.send_text(message)
+
+    async def send_mark(self, call_id: str) -> None:
+        """Send a mark and wait for Twilio to confirm playback completion.
+
+        Blocks until Twilio sends back the mark event (meaning all audio
+        before this mark has been played to the caller), or times out.
+        """
+        if self._ws is None:
+            return
+
+        self._mark_counter += 1
+        name = f"mark-{self._mark_counter}"
+
+        loop = asyncio.get_event_loop()
+        fut = loop.create_future()
+        self._mark_futures[name] = fut
+
+        message = json.dumps({
+            "event": "mark",
+            "streamSid": self._stream_sid,
+            "mark": {"name": name},
+        })
+        await self._ws.send_text(message)
+
+        try:
+            await asyncio.wait_for(fut, timeout=_MARK_TIMEOUT_SEC)
+            log.debug("mark_confirmed", name=name)
+        except asyncio.TimeoutError:
+            self._mark_futures.pop(name, None)
+            log.warning("mark_timeout", name=name, timeout=_MARK_TIMEOUT_SEC)
+
+    async def clear_audio(self, call_id: str) -> None:
+        """Clear Twilio's audio buffer immediately (for barge-in)."""
+        if self._ws is None:
+            return
+
+        message = json.dumps({
+            "event": "clear",
+            "streamSid": self._stream_sid,
+        })
+        await self._ws.send_text(message)
+        log.debug("audio_cleared")
