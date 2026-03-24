@@ -36,7 +36,8 @@ class CallMetrics:
     barge_in_count: int = 0
     turn_count: int = 0
 
-    # Tool calls
+    # Research
+    research_mode: str = ""
     tool_calls: list[dict] = field(default_factory=list)
 
     # Errors

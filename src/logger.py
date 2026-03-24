@@ -71,6 +71,7 @@ class CallLogger:
                 "barge_in_count": metrics.barge_in_count,
                 "turn_count": metrics.turn_count,
             },
+            "research_mode": metrics.research_mode,
             "tool_calls": metrics.tool_calls,
             "errors": metrics.errors,
         }

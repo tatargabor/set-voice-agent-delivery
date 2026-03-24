@@ -9,11 +9,27 @@ import structlog
 
 from .agent import CallContext, is_sentence_boundary
 from .agent_tools import TOOL_DEFINITIONS, execute_tool
+from .agent_cache import get_or_create_cache
+from .config import get_settings
+from .local_agent import research
 
 log = structlog.get_logger()
 
 # Simple messages that don't need a fast ack
 _SIMPLE_PATTERNS = {"igen", "nem", "szia", "helló", "halló", "ok", "oké", "jó", "köszönöm", "köszi", "meg", "megkaptam"}
+
+
+_RESEARCH_KEYWORDS = {
+    "fájl", "kód", "spec", "change", "design", "keress", "nézd meg",
+    "mi van a", "hogyan van implementálva", "forráskód", "openspec",
+    "implementáció", "melyik fájl", "hol van", "mutasd meg",
+}
+
+
+def _is_research_question(text: str) -> bool:
+    """Check if the question likely needs deep project research."""
+    lower = text.strip().lower()
+    return any(kw in lower for kw in _RESEARCH_KEYWORDS)
 
 
 def _is_simple(text: str) -> bool:
@@ -31,12 +47,13 @@ class ResponseLayers:
 
     def __init__(
         self,
-        fast_model: str = "claude-haiku-4-5",
-        deep_model: str = "claude-sonnet-4-6",
+        fast_model: str | None = None,
+        deep_model: str | None = None,
     ):
+        settings = get_settings()
         self.client = AsyncAnthropic()
-        self.fast_model = fast_model
-        self.deep_model = deep_model
+        self.fast_model = fast_model or settings.models.fast
+        self.deep_model = deep_model or settings.models.deep
         self.last_usage: dict | None = None
         self._fast_usage: dict | None = None
         self.tool_calls: list[dict] = []  # Logged per-response
@@ -64,7 +81,7 @@ class ResponseLayers:
             model=self.deep_model,
             system=system_prompt,
             messages=ctx.history,
-            max_tokens=300,
+            max_tokens=get_settings().voice.max_tokens_stream,
         ) as stream:
             buffer = ""
             full_text = ""
@@ -94,7 +111,8 @@ class ResponseLayers:
         self.tool_calls = []
         messages = list(ctx.history)  # Copy
         total_start = time.monotonic()
-        _TOOL_TIMEOUT = 15.0
+        settings = get_settings()
+        _TOOL_TIMEOUT = float(settings.research.tool_timeout_sec)
 
         for _iteration in range(5):  # Max 5 tool rounds
             elapsed = time.monotonic() - total_start
@@ -106,7 +124,7 @@ class ResponseLayers:
                 model=self.deep_model,
                 system=system_prompt,
                 messages=messages,
-                max_tokens=150,
+                max_tokens=settings.voice.max_tokens_tool_use,
                 tools=TOOL_DEFINITIONS,
             )
 
@@ -152,8 +170,8 @@ class ResponseLayers:
                         buffer = ""
                 if buffer.strip():
                     sentences.append(buffer.strip())
-                # Voice limit: max 3 sentences, suggest follow-up
-                _MAX_VOICE_SENTENCES = 3
+                # Voice limit: max N sentences, suggest follow-up
+                _MAX_VOICE_SENTENCES = settings.voice.max_sentences
                 if len(sentences) > _MAX_VOICE_SENTENCES:
                     sentences = sentences[:_MAX_VOICE_SENTENCES]
                     sentences.append("Szeretnéd, hogy részletesebben elmondjam?")
@@ -161,6 +179,35 @@ class ResponseLayers:
 
         # Timeout fallback — return whatever text blocks we got from last response
         return ["Sajnos nem sikerült az információt megtalálni."]
+
+    async def _deep_response_with_agent(
+        self, ctx: CallContext, project_dir: Path
+    ) -> list[str]:
+        """Deep response via local agent. Returns list of sentence chunks."""
+        self.tool_calls = []
+        customer_text = ctx.history[-1]["content"] if ctx.history else ""
+
+        cache = get_or_create_cache(project_dir)
+        answer = await research(customer_text, project_dir, cache)
+
+        # Split into sentences and apply voice limit
+        settings = get_settings()
+        sentences = []
+        buffer = ""
+        for char in answer:
+            buffer += char
+            if is_sentence_boundary(buffer):
+                sentences.append(buffer.strip())
+                buffer = ""
+        if buffer.strip():
+            sentences.append(buffer.strip())
+
+        max_s = settings.voice.max_sentences
+        if len(sentences) > max_s:
+            sentences = sentences[:max_s]
+            sentences.append("Szeretnéd, hogy részletesebben elmondjam?")
+
+        return sentences
 
     async def respond(
         self, ctx: CallContext, customer_text: str, system_prompt: str
@@ -194,11 +241,20 @@ class ResponseLayers:
         deep_done = asyncio.Event()
 
         async def _collect_deep():
-            if ctx.project_dir and Path(ctx.project_dir).exists():
-                # Use tool_use loop for project-aware responses
-                sentences = await self._deep_response_with_tools(
-                    ctx, system_prompt, Path(ctx.project_dir)
+            settings = get_settings()
+            mode = settings.research.mode
+            has_project = ctx.project_dir and Path(ctx.project_dir).exists()
+
+            if has_project:
+                pdir = Path(ctx.project_dir)
+                use_agent = (
+                    mode == "local_agent"
+                    or (mode == "auto" and _is_research_question(customer_text))
                 )
+                if use_agent:
+                    sentences = await self._deep_response_with_agent(ctx, pdir)
+                else:
+                    sentences = await self._deep_response_with_tools(ctx, system_prompt, pdir)
                 deep_sentences.extend(sentences)
             else:
                 async for sentence in self._deep_response_stream(ctx, system_prompt):

@@ -1,10 +1,81 @@
-"""Environment configuration loader with per-provider validation."""
+"""Configuration loader — config.yaml for app settings, .env for secrets."""
 
 import os
 from pathlib import Path
+from typing import Literal
+
+import yaml
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
+
+# --- App settings from config.yaml ---
+
+class ModelsConfig(BaseModel):
+    fast: str = "claude-haiku-4-5"
+    deep: str = "claude-sonnet-4-6"
+    agent: str = "claude-sonnet-4-6"
+
+
+class VoiceConfig(BaseModel):
+    max_sentences: int = 3
+    max_tokens_tool_use: int = 150
+    max_tokens_agent: int = 100
+    max_tokens_stream: int = 300
+    endpoint_delay_ms: int = 1200
+
+
+class ResearchConfig(BaseModel):
+    mode: Literal["tool_use", "local_agent", "auto"] = "tool_use"
+    agent_timeout_sec: int = 10
+    agent_max_iterations: int = 3
+    tool_timeout_sec: int = 15
+
+
+class AppSettings(BaseModel):
+    """Application settings loaded from config.yaml."""
+    models: ModelsConfig = ModelsConfig()
+    voice: VoiceConfig = VoiceConfig()
+    research: ResearchConfig = ResearchConfig()
+    projects_dir: str = "/home/tg/code2"
+
+
+_settings: AppSettings | None = None
+
+
+def load_app_settings(config_path: Path | None = None) -> AppSettings:
+    """Load settings from config.yaml. Falls back to defaults if missing."""
+    global _settings
+    if _settings is not None:
+        return _settings
+
+    if config_path is None:
+        config_path = Path(__file__).parent.parent / "config.yaml"
+
+    if config_path.exists():
+        with open(config_path) as f:
+            data = yaml.safe_load(f) or {}
+        _settings = AppSettings(**data)
+    else:
+        _settings = AppSettings()
+
+    return _settings
+
+
+def get_settings() -> AppSettings:
+    """Get cached settings (loads on first call)."""
+    if _settings is None:
+        return load_app_settings()
+    return _settings
+
+
+def reset_settings() -> None:
+    """Reset cached settings (for testing)."""
+    global _settings
+    _settings = None
+
+
+# --- Provider secrets from .env ---
 
 PROVIDER_KEYS = {
     "anthropic": ["ANTHROPIC_API_KEY"],
@@ -15,7 +86,7 @@ PROVIDER_KEYS = {
 
 
 class AppConfig(BaseModel):
-    """Validated application configuration."""
+    """Validated provider credentials from .env."""
     anthropic_api_key: str
     soniox_api_key: str | None = None
     google_application_credentials: str | None = None

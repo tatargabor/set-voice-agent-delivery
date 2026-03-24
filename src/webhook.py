@@ -83,7 +83,8 @@ def enable_inbound_mode(done_event: threading.Event | None = None) -> None:
 @app.get("/api/projects")
 async def list_projects():
     """Discover projects from the code directory."""
-    code_dir = Path(os.environ.get("PROJECTS_DIR", "/home/tg/code2"))
+    from .config import get_settings
+    code_dir = Path(get_settings().projects_dir)
     projects = []
     if code_dir.exists():
         for d in sorted(code_dir.iterdir()):
@@ -195,7 +196,7 @@ async def twilio_media_stream(ws: WebSocket):
         # Load project context — from widget selection or contacts.yaml
         project_context_str = ""
         project_id = inbound_info.get("project_id", "")
-        code_dir = Path(os.environ.get("PROJECTS_DIR", "/home/tg/code2"))
+        code_dir = Path(get_settings().projects_dir)
         project_dir = str(code_dir / project_id) if project_id else customer.get("project_dir")
         if project_dir and Path(project_dir).exists():
             pc = load_project_context(project_dir, customer.get("customer_name", ""))
@@ -222,6 +223,7 @@ async def twilio_media_stream(ws: WebSocket):
             customer_name=customer.get("customer_name", "ismeretlen"),
             script_name=customer.get("script", "inbound"),
             phone_masked=mask_phone(caller_phone),
+            research_mode=get_settings().research.mode,
         )
 
         pipeline = CallPipeline(stt=stt, tts=tts, telephony=telephony, agent=agent, metrics=metrics)

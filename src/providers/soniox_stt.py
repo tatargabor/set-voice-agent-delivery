@@ -16,11 +16,12 @@ class SonioxSTTProvider(STTProvider):
         self,
         model: str = "stt-rt-v4",
         sample_rate: int = 8000,
-        endpoint_delay_ms: int = 1200,
+        endpoint_delay_ms: int | None = None,
     ):
+        from ..config import get_settings
         self._model = model
         self._sample_rate = sample_rate
-        self._endpoint_delay_ms = endpoint_delay_ms
+        self._endpoint_delay_ms = endpoint_delay_ms or get_settings().voice.endpoint_delay_ms
         self._client: AsyncSonioxClient | None = None
         self._session = None
 

@@ -1,0 +1,22 @@
+# Voice Agent Configuration
+# API keys stay in .env (never committed) — this file is for app settings only.
+
+models:
+  fast: claude-haiku-4-5        # Fast ack layer
+  deep: claude-sonnet-4-6       # Deep response + tool_use
+  agent: claude-sonnet-4-6      # Local agent research
+
+voice:
+  max_sentences: 3              # Max sentences per response
+  max_tokens_tool_use: 150      # Deep layer with tool_use
+  max_tokens_agent: 100         # Local agent response
+  max_tokens_stream: 300        # Streaming (no tools)
+  endpoint_delay_ms: 1200       # Soniox silence detection threshold
+
+research:
+  mode: auto                    # tool_use | local_agent | auto
+  agent_timeout_sec: 10         # Local agent total timeout
+  agent_max_iterations: 3       # Local agent max tool rounds
+  tool_timeout_sec: 15          # tool_use loop total timeout
+
+projects_dir: /home/tg/code2    # Where to discover customer projects
