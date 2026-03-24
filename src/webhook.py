@@ -80,19 +80,53 @@ def enable_inbound_mode(done_event: threading.Event | None = None) -> None:
     _inbound_done = done_event
 
 
+def _resolve_project_dir(project_id: str) -> str | None:
+    """Resolve project name to directory path via set-project list."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["set-project", "list"], capture_output=True, text=True, timeout=5
+        )
+        for line in result.stdout.splitlines():
+            if " -> " in line and not line.strip().startswith("└"):
+                parts = line.strip().split(" -> ", 1)
+                if parts[0].strip() == project_id:
+                    return parts[1].strip()
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    # Fallback: try projects_dir/name
+    from .config import get_settings
+    fallback = Path(get_settings().projects_dir) / project_id
+    return str(fallback) if fallback.exists() else None
+
+
 @app.get("/api/projects")
 async def list_projects():
-    """Discover projects from the code directory."""
-    from .config import get_settings
-    code_dir = Path(get_settings().projects_dir)
+    """Discover projects from set-project list (registered projects)."""
+    import subprocess
     projects = []
-    if code_dir.exists():
-        for d in sorted(code_dir.iterdir()):
-            if d.is_dir() and not d.name.startswith("."):
-                # Check if it looks like a project (has pyproject.toml, package.json, or openspec/)
-                is_project = any((d / f).exists() for f in ["pyproject.toml", "package.json", "openspec", ".git"])
-                if is_project:
-                    projects.append({"id": d.name, "label": d.name, "path": str(d)})
+    try:
+        result = subprocess.run(
+            ["set-project", "list"], capture_output=True, text=True, timeout=5
+        )
+        # Parse "    name -> /path" lines (top-level projects, not worktrees)
+        for line in result.stdout.splitlines():
+            line = line.rstrip()
+            if " -> " in line and not line.strip().startswith("└"):
+                parts = line.strip().split(" -> ", 1)
+                name = parts[0].strip()
+                path = parts[1].strip()
+                projects.append({"id": name, "label": name, "path": path})
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        # Fallback: scan projects_dir
+        from .config import get_settings
+        code_dir = Path(get_settings().projects_dir)
+        if code_dir.exists():
+            for d in sorted(code_dir.iterdir()):
+                if d.is_dir() and not d.name.startswith("."):
+                    is_project = any((d / f).exists() for f in ["pyproject.toml", "package.json", "openspec", ".git"])
+                    if is_project:
+                        projects.append({"id": d.name, "label": d.name, "path": str(d)})
     return JSONResponse({"projects": projects})
 
 
@@ -196,8 +230,7 @@ async def twilio_media_stream(ws: WebSocket):
         # Load project context — from widget selection or contacts.yaml
         project_context_str = ""
         project_id = inbound_info.get("project_id", "")
-        code_dir = Path(get_settings().projects_dir)
-        project_dir = str(code_dir / project_id) if project_id else customer.get("project_dir")
+        project_dir = _resolve_project_dir(project_id) if project_id else customer.get("project_dir")
         if project_dir and Path(project_dir).exists():
             pc = load_project_context(project_dir, customer.get("customer_name", ""))
             project_context_str = pc.to_prompt_section()

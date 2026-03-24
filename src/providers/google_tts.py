@@ -19,7 +19,7 @@ class GoogleTTSProvider(TTSProvider):
     def __init__(
         self,
         language_code: str = "hu-HU",
-        voice_name: str | None = None,
+        voice_name: str = "hu-HU-Wavenet-B",
         sample_rate: int = 8000,
     ):
         self._language_code = language_code
