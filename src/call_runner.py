@@ -30,6 +30,7 @@ from .agent import ConversationAgent
 from .metrics import CallMetrics, mask_phone, calculate_costs
 from .logger import CallLogger
 from .pipeline import CallPipeline
+from .response_layers import ResponseLayers
 from .providers.soniox_stt import SonioxSTTProvider
 from .providers.google_tts import GoogleTTSProvider
 from .providers.twilio_provider import TwilioTelephonyProvider
@@ -103,8 +104,9 @@ async def run_call(args):
             phone_masked=mask_phone(args.phone),
         )
 
-        # 6. Build pipeline with metrics
+        # 6. Build pipeline with metrics + dual-layer response
         pipeline = CallPipeline(stt=stt, tts=tts, telephony=telephony, agent=agent, metrics=metrics)
+        pipeline.response_layers = ResponseLayers()
 
         # 7. Start webhook server
         _start_server(args.webhook_host, args.webhook_port)

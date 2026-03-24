@@ -17,6 +17,7 @@ from .agent import ConversationAgent, CallContext
 from .caller_lookup import lookup_caller
 from .metrics import CallMetrics, mask_phone
 from .pipeline import CallPipeline
+from .response_layers import ResponseLayers
 from .providers.soniox_stt import SonioxSTTProvider
 from .providers.google_tts import GoogleTTSProvider
 from .providers.twilio_provider import TwilioTelephonyProvider
@@ -192,6 +193,7 @@ async def twilio_media_stream(ws: WebSocket):
         )
 
         pipeline = CallPipeline(stt=stt, tts=tts, telephony=telephony, agent=agent, metrics=metrics)
+        pipeline.response_layers = ResponseLayers()
         done_event = _inbound_done
     else:
         # Outbound mode — use pre-configured state

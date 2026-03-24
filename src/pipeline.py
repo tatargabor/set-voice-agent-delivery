@@ -6,6 +6,7 @@ import structlog
 
 from .agent import ConversationAgent, CallContext
 from .metrics import CallMetrics
+from .response_layers import ResponseLayers
 from .state import CallState, CallStateMachine
 from .providers.base import STTProvider, TTSProvider, TelephonyProvider
 
@@ -31,6 +32,7 @@ class CallPipeline:
         self.telephony = telephony
         self.agent = agent
         self.metrics = metrics
+        self.response_layers: ResponseLayers | None = None
         self.state_machine = CallStateMachine()
         self._state_lock = asyncio.Lock()
 
@@ -75,7 +77,9 @@ class CallPipeline:
                 break
 
     async def _llm_loop(self, ctx: CallContext) -> None:
-        """Get transcripts → Claude streaming → put sentence chunks on TTS queue."""
+        """Get transcripts → dual-layer or streaming response → TTS queue."""
+        system_prompt = self.agent._build_system_prompt(ctx)
+
         while not self.state_machine.is_ended:
             try:
                 transcript = await asyncio.wait_for(self._stt_queue.get(), timeout=1.0)
@@ -88,7 +92,13 @@ class CallPipeline:
             full_response = ""
             first_chunk = True
 
-            async for sentence in self.agent.respond_stream(ctx, transcript):
+            # Use dual-layer if available, otherwise streaming agent
+            if self.response_layers:
+                response_gen = self.response_layers.respond(ctx, transcript, system_prompt)
+            else:
+                response_gen = self.agent.respond_stream(ctx, transcript)
+
+            async for sentence in response_gen:
                 if first_chunk:
                     elapsed_ms = int((time.monotonic() - t0) * 1000)
                     log.info("first_sentence", text=sentence, latency_ms=elapsed_ms)
@@ -104,18 +114,32 @@ class CallPipeline:
             # Signal end of this turn's chunks
             await self._tts_queue.put(_TURN_END)
 
-            # Get usage from streaming response
-            if self.agent.last_usage and self.metrics:
+            # Track usage from response layers or agent
+            if self.response_layers:
+                if self.response_layers.last_usage and self.metrics:
+                    self.metrics.add_claude_usage(
+                        self.response_layers.last_usage["input_tokens"],
+                        self.response_layers.last_usage["output_tokens"],
+                    )
+                # Also track fast ack usage
+                if self.response_layers._fast_usage and self.metrics:
+                    self.metrics.add_claude_usage(
+                        self.response_layers._fast_usage["input_tokens"],
+                        self.response_layers._fast_usage["output_tokens"],
+                    )
+                    self.response_layers._fast_usage = None
+            elif self.agent.last_usage and self.metrics:
                 self.metrics.add_claude_usage(
                     self.agent.last_usage["input_tokens"],
                     self.agent.last_usage["output_tokens"],
                 )
+
+            if self.metrics:
                 self.metrics.turn_count += 1
 
             log.info("agent_response_complete", text=full_response.strip())
 
             if self.agent.should_hangup(full_response):
-                # Wait for TTS to finish playing all chunks
                 await self._tts_queue.join()
                 await asyncio.sleep(3)
                 await self._transition(CallState.ENDED, reason="agent farewell")
