@@ -16,7 +16,7 @@ class SonioxSTTProvider(STTProvider):
         self,
         model: str = "stt-rt-v4",
         sample_rate: int = 8000,
-        endpoint_delay_ms: int = 1500,
+        endpoint_delay_ms: int = 800,
     ):
         self._model = model
         self._sample_rate = sample_rate

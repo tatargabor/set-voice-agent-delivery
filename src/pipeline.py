@@ -208,9 +208,8 @@ class CallPipeline:
                 self.agent.last_usage["output_tokens"],
             )
 
-        # Wait for greeting playback
-        audio_data_bytes = max(0, greeting_audio_bytes - 44)
-        greeting_duration = audio_data_bytes / 8000
+        # Wait for greeting playback (audio is raw mulaw 8kHz = 1 byte/sample)
+        greeting_duration = greeting_audio_bytes / 8000
         wait_time = max(0, greeting_duration - 1.0)
         await asyncio.sleep(wait_time)
         await self._transition(CallState.LISTENING, reason="greeting complete")

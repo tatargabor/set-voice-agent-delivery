@@ -65,5 +65,8 @@ class GoogleTTSProvider(TTSProvider):
         )
 
         audio = response.audio_content
+        # Strip WAV header (44 bytes) — raw mulaw data only, avoids clicks between chunks
+        if audio[:4] == b'RIFF':
+            audio = audio[44:]
         for i in range(0, len(audio), _CHUNK_SIZE):
             yield audio[i : i + _CHUNK_SIZE]
