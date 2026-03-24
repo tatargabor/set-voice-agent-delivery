@@ -9,3 +9,4 @@ logs/
 recordings/
 wt/.work/
 gcp-service-account.json
+data/

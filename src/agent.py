@@ -41,7 +41,7 @@ Szabályok:
         response = await self.client.messages.create(
             model=self.model,
             system=self._build_system_prompt(ctx),
-            messages=[{"role": "user", "content": "(Az ügyfél felvette a telefont. Köszöntsd és térj a tárgyra.)"}],
+            messages=[{"role": "user", "content": "(Az ügyfél felvette a telefont. Köszöntsd, mondd el hogy a hívás rögzítésre kerülhet, majd térj a tárgyra.)"}],
             max_tokens=150,
         )
         text = response.content[0].text
