@@ -8,9 +8,11 @@ version = "0.1.0"
 description = "AI voice agent for outbound customer calls — Soniox STT/TTS + Claude conversation engine + Twilio telephony"
 requires-python = ">=3.11"
 dependencies = [
-    "soniox>=1.0",
+    "soniox>=2.2.0,<3.0",
     "twilio>=9.0",
     "anthropic>=0.40",
+    "google-cloud-texttospeech>=2.0",
+    "python-dotenv>=1.0",
     "pydantic>=2.0",
     "pyyaml>=6.0",
     "structlog>=24.0",

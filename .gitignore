@@ -7,3 +7,5 @@ dist/
 .pytest_cache/
 logs/
 recordings/
+wt/.work/
+gcp-service-account.json
