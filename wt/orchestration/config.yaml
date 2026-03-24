@@ -1,0 +1,6 @@
+default_model: sonnet
+test_command: "pytest tests/ -m 'not audio_loop and not telephony'"
+max_parallel: 2
+merge_policy: checkpoint
+review_before_merge: true
+max_verify_retries: 2

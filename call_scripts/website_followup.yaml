@@ -1,0 +1,48 @@
+name: website_followup
+description: "Felhívjuk az ügyfelet és megkérdezzük megkapta-e a levelet a weboldaláról"
+
+context:
+  purpose: "Megkérdezni megkapta-e a levelet a weboldaláról, van-e kérdése"
+  variables:
+    - customer_name
+    - company_name
+    - website_url
+
+conversation:
+  model: claude-sonnet-4-6
+  max_turns: 10
+  max_response_tokens: 150
+  language: hu-HU
+
+  system_prompt: |
+    Te egy ügyfélszolgálati agent vagy a {company_name} nevében.
+    Küldtünk egy levelet az ügyfélnek ({customer_name}) a {website_url} weboldalról.
+    Kérdezd meg megkapta-e, és van-e kérdése vagy módosítási igénye.
+    Rövid, természetes válaszok. Magyarul.
+
+  goals:
+    - Megkérdezni megkapta-e a levelet
+    - Megnézte-e a weboldalt
+    - Van-e kérdése vagy módosítási igénye
+    - Rögzíteni amit kér
+
+  end_conditions:
+    - "Ügyfél búcsúzik"
+    - "Minden kérdés megválaszolva"
+    - "Ügyfél kéri hogy ne hívjuk többet"
+
+telephony:
+  provider: twilio
+  mode: outbound
+  max_duration_sec: 300
+  legal_hours: "08:00-20:00"
+
+stt:
+  provider: soniox
+  language: hu-HU
+  mode: streaming
+
+tts:
+  provider: soniox
+  language: hu-HU
+  voice: default

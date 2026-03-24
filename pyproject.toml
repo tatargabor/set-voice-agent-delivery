@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "set-voice-agent-delivery"
+version = "0.1.0"
+description = "AI voice agent for outbound customer calls — Soniox STT/TTS + Claude conversation engine + Twilio telephony"
+requires-python = ">=3.11"
+dependencies = [
+    "soniox>=1.0",
+    "twilio>=9.0",
+    "anthropic>=0.40",
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+    "structlog>=24.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+markers = [
+    "conversation: text-based conversation flow tests",
+    "audio_loop: STT→Claude→TTS round-trip tests (requires SONIOX_API_KEY)",
+    "telephony: real phone call tests (requires TWILIO credentials)",
+]
