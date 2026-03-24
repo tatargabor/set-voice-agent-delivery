@@ -208,6 +208,7 @@ async def twilio_media_stream(ws: WebSocket):
             purpose=f"Bejövő hívás — {customer.get('customer_name', 'ismeretlen')} kérdése",
             website_url=customer.get("website_url"),
             project_context=project_context_str,
+            project_dir=project_dir,
         )
 
         telephony = TwilioTelephonyProvider()

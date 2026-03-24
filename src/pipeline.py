@@ -128,6 +128,10 @@ class CallPipeline:
                         self.response_layers._fast_usage["output_tokens"],
                     )
                     self.response_layers._fast_usage = None
+                # Track tool calls
+                if self.response_layers.tool_calls and self.metrics:
+                    self.metrics.add_tool_calls(self.response_layers.tool_calls)
+                    self.response_layers.tool_calls = []
             elif self.agent.last_usage and self.metrics:
                 self.metrics.add_claude_usage(
                     self.agent.last_usage["input_tokens"],

@@ -13,6 +13,7 @@ class CallContext(BaseModel):
     purpose: str
     website_url: str | None = None
     project_context: str = ""
+    project_dir: str | None = None
     history: list[dict] = []
 
 
@@ -52,10 +53,10 @@ Kontextus:
 Szabályok:
 - Rövid, természetes válaszok (1-2 mondat max)
 - Magyarul beszélj, természetesen, közvetlenül
-- Ha az ügyfél kér valamit, rögzítsd a record_request tool-lal
 - Ha az ügyfél búcsúzik vagy lezárja, zárd le udvariasan
 - Ne ismételd magad, ne légy túl formális
-- Ha a projekt kontextusban van releváns info, használd a válaszodban"""
+- Ha a projekt kontextusban van releváns info, használd a válaszodban
+- Ha az ügyfél kérdez a projektről és van tool elérhető, használd a file_read, grep_search, openspec_read vagy design_check tool-t a pontos válaszhoz"""
 
     async def get_greeting(self, ctx: CallContext) -> tuple[str, dict]:
         """Generate the opening greeting (non-streaming, greeting is short).

@@ -36,6 +36,9 @@ class CallMetrics:
     barge_in_count: int = 0
     turn_count: int = 0
 
+    # Tool calls
+    tool_calls: list[dict] = field(default_factory=list)
+
     # Errors
     errors: list[dict] = field(default_factory=list)
 
@@ -43,6 +46,9 @@ class CallMetrics:
         self.claude_input_tokens += input_tokens
         self.claude_output_tokens += output_tokens
         self.claude_requests += 1
+
+    def add_tool_calls(self, calls: list[dict]) -> None:
+        self.tool_calls.extend(calls)
 
     def add_error(self, error_type: str, message: str) -> None:
         self.errors.append({
