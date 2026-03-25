@@ -8,13 +8,19 @@ AI voice agent: Soniox STT (magyar) + Claude (beszélgetés) + Google TTS (magya
 - ngrok (free tier OK)
 - API kulcsok (lásd `.env` setup)
 
+## Telepítés új gépen
+
+```bash
+git clone https://github.com/tatargabor/set-voice-agent-delivery.git
+cd set-voice-agent-delivery
+pip install -e ".[dev]"
+```
+
 ## Indítás lépésről lépésre
 
 ### 1. API kulcsok (.env)
 
-```bash
-cp .env.example .env  # vagy hozd létre kézzel
-```
+Hozd létre a `.env` fájlt a projekt gyökerében:
 
 Szükséges kulcsok a `.env`-ben:
 
