@@ -192,6 +192,32 @@ async def api_call(request: Request):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+@app.post("/api/index-project")
+async def api_index_project(request: Request):
+    """Trigger project index generation (called by widget on project select)."""
+    data = await request.json()
+    project_id = data.get("project", "")
+
+    if not project_id:
+        return JSONResponse({"error": "project required"}, status_code=400)
+
+    project_dir = _resolve_project_dir(project_id)
+    if not project_dir or not Path(project_dir).exists():
+        return JSONResponse({"error": f"Project not found: {project_id}"}, status_code=404)
+
+    from .project_indexer import read_cache, generate_index
+
+    # Check if cache is fresh
+    cached = read_cache(project_id, Path(project_dir))
+    if cached:
+        return JSONResponse({"status": "cached", "project": project_id})
+
+    # Generate in background
+    import asyncio
+    asyncio.create_task(generate_index(project_dir, project_id))
+    return JSONResponse({"status": "indexing", "project": project_id}, status_code=202)
+
+
 @app.post("/twilio/voice-outbound")
 async def twilio_voice_outbound(request: Request):
     """TwiML for outbound calls initiated from the widget."""
@@ -295,7 +321,10 @@ async def twilio_media_stream(ws: WebSocket):
         if project_dir and Path(project_dir).exists():
             pc = load_project_context(project_dir, customer.get("customer_name", ""))
             project_context_str = pc.to_prompt_section()
-            log.info("project_context_loaded", chars=len(project_context_str))
+            # Prepend project name so the agent knows which project is selected
+            if project_id:
+                project_context_str = f"Kiválasztott projekt: {project_id}\n\n{project_context_str}"
+            log.info("project_context_loaded", project=project_id, chars=len(project_context_str))
 
         outbound_phone = inbound_info.get("outbound_phone", "")
         is_outbound = bool(outbound_phone)
@@ -392,5 +421,22 @@ async def twilio_media_stream(ws: WebSocket):
                 call_logger = CallLogger()
                 call_logger.save(pipeline.metrics, ctx.history, outcome="completed")
                 log.info("inbound_call_logged")
+
+                # Generate post-call summary for dev team
+                try:
+                    from .call_summary import generate_call_summary
+                    project_id = inbound_info.get("project_id", "") if inbound_info else ""
+                    summary = await generate_call_summary(
+                        transcript=ctx.history,
+                        customer_name=ctx.customer_name,
+                        project_id=project_id,
+                        call_id=pipeline.metrics.call_id,
+                    )
+                    if summary.get("modification_requests"):
+                        log.info("dev_action_items",
+                                 project=project_id,
+                                 items=summary["modification_requests"])
+                except Exception as e:
+                    log.error("summary_generation_failed", error=str(e))
         if done_event:
             done_event.set()

@@ -51,16 +51,25 @@ Kontextus:
 - Cél: {ctx.purpose}
 {f'- Weboldal: {ctx.website_url}' if ctx.website_url else ''}{project_section}
 
+A te feladatod:
+1. Válaszolj az ügyfél kérdéseire a projektjével kapcsolatban
+2. Ha módosítást vagy javítást kér, nyugtázd és foglald össze mit kér — a fejlesztő csapat meg fogja kapni
+3. Ha nem érted pontosan mit kér, kérdezz vissza — inkább kérdezz egyet többet mint adj ki felesleges infót
+
+Információforrások — fontossági sorrend:
+1. Az openspec specifikáció (specs/ mappa) — ez az irányadó, MINDIG ebből indulj ki
+2. A docs/ mappa — itt van a design dokumentáció, Figma/UI/UX leírások ha vannak
+3. A forráskód — CSAK ha az ügyfél konkrét technikai kérdést tesz fel (pl. "miért kék az a gomb?", "hogyan működik a menü?"). Kerüld a kódba nézést ha az openspec vagy docs alapján válaszolni tudsz.
+
 Szabályok:
-- Rövid, természetes válaszok (1-2 mondat max)
+- SOHA ne találj ki dolgokat magadtól! Ha nem tudod a választ, mondd hogy "Utánanézek" vagy "Ezt meg kell kérdeznem a csapattól"
+- Rövid, természetes válaszok (1-2 mondat max) — ez telefon, nem chat
 - Magyarul beszélj, természetesen, közvetlenül
 - Ha az ügyfél búcsúzik vagy lezárja, zárd le udvariasan
 - Ne ismételd magad, ne légy túl formális
-- Ha a projekt kontextusban van releváns info, használd a válaszodban
-- Ha az ügyfél kérdez a projektről és van tool elérhető, használd a file_read, grep_search, openspec_read vagy design_check tool-t a pontos válaszhoz
-- FONTOS: Max 2 mondat válasz! Ez telefon, nem chat. Ha több infó van, foglald össze röviden és kérdezd meg "Részletesebben elmondjam?"
-- Ne olvass fel teljes fájlokat vagy listákat — foglald össze a lényeget
-- FONTOS: A válaszod telefonon lesz felolvasva TTS-sel! NE használj markdown formázást (csillag, kettőskereszt, kötőjeles lista), emojikat, kódot, URL-eket. Tiszta beszélt magyar nyelven válaszolj, mintha élőszóban beszélnél."""
+- NE okoskodj és NE adj ki projekt részleteket amíg az ügyfél nem kérdez rá konkrétan!
+- Ha módosítási kérés érkezik, erősítsd vissza mit értettél: "Értem, tehát X-et szeretné Y-ra módosítani, igaz?"
+- A válaszod telefonon lesz felolvasva TTS-sel! NE használj markdown formázást, emojikat, kódot, URL-eket. Tiszta beszélt magyar nyelven válaszolj."""
 
     def _greeting_instruction(self, ctx: CallContext) -> str:
         """Return direction-aware greeting instruction."""
@@ -69,6 +78,20 @@ Szabályok:
                 "(Te hívtad az ügyfelet, ő vette fel. Köszöntsd, mutatkozz be a cég nevében, "
                 "mondd el hogy a hívás rögzítésre kerülhet, majd mondd el miért hívod: "
                 f"{ctx.purpose}. Ne kérdezd hogy miben segíthetsz — te keresed őt.)"
+            )
+        project_name = ""
+        if ctx.project_context:
+            # Extract project name from context if available
+            for line in ctx.project_context.split("\n"):
+                if line.startswith("Kiválasztott projekt:"):
+                    project_name = line.split(":", 1)[1].strip()
+                    break
+        if project_name:
+            return (
+                f"(Az ügyfél hívott a {project_name} projektjével kapcsolatban. "
+                "Köszöntsd, mondd el a cég nevét, hogy a hívás rögzítésre kerülhet, "
+                f"majd mondd el hogy elkészült a {project_name} projektje és kérdezd meg "
+                "van-e kérdése vele kapcsolatban.)"
             )
         return (
             "(Az ügyfél hívott minket, te vetted fel. Köszöntsd, mondd el a cég nevét, "

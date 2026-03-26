@@ -3,7 +3,7 @@
 
 models:
   fast: claude-haiku-4-5        # Fast ack layer
-  deep: claude-sonnet-4-6       # Deep response + tool_use
+  deep: claude-opus-4-6         # Deep response + tool_use
   agent: claude-sonnet-4-6      # Local agent research
 
 tts:

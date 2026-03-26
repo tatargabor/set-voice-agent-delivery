@@ -19,8 +19,51 @@ _MAX_GREP_LINES = 30
 
 TOOL_DEFINITIONS = [
     {
+        "name": "openspec_read",
+        "description": "ELSŐDLEGES FORRÁS — Az openspec specifikáció olvasása. Mindig ELŐSZÖR ezt használd! Tartalmazza a projekt követelményeit, terveket, állapotot. Spec vagy change neve kell.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Spec or change name, e.g. 'navbar' or 'green-menu'",
+                }
+            },
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "docs_read",
+        "description": "MÁSODLAGOS FORRÁS — Design dokumentáció, Figma/UI/UX leírások a docs/ mappából. Használd design kérdéseknél (színek, elrendezés, tipográfia).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "File path relative to docs/, e.g. 'design.md' or 'figma-export.md'. Leave empty to list available docs.",
+                    "default": "",
+                }
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "design_check",
+        "description": "Design token keresés a design-snapshot.md-ből. Színek, méretek, komponens stílusok kereséséhez.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "component": {
+                    "type": "string",
+                    "description": "Component name to look up, e.g. 'Navbar', 'Button'",
+                }
+            },
+            "required": ["component"],
+        },
+    },
+    {
         "name": "file_read",
-        "description": "Read a file from the customer's project. Path is relative to the project root. Returns max 2000 chars.",
+        "description": "CSAK HA SZÜKSÉGES — Forráskód olvasás. Csak konkrét technikai kérdésnél használd (pl. 'miért kék a gomb?'), ha az openspec és docs nem ad választ.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -34,7 +77,7 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "grep_search",
-        "description": "Search for a pattern in the project files. Returns matching lines with file paths.",
+        "description": "CSAK HA SZÜKSÉGES — Keresés a forráskódban. Csak ha az openspec/docs nem elég és konkrét kód kell.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -49,34 +92,6 @@ TOOL_DEFINITIONS = [
                 },
             },
             "required": ["pattern"],
-        },
-    },
-    {
-        "name": "openspec_read",
-        "description": "Read an OpenSpec spec or change. Returns the spec content or change proposal/status.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "description": "Spec or change name, e.g. 'navbar' or 'green-menu'",
-                }
-            },
-            "required": ["name"],
-        },
-    },
-    {
-        "name": "design_check",
-        "description": "Look up a component's design tokens from the project's design-snapshot.md.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "component": {
-                    "type": "string",
-                    "description": "Component name to look up, e.g. 'Navbar', 'Button'",
-                }
-            },
-            "required": ["component"],
         },
     },
 ]
@@ -199,6 +214,34 @@ def openspec_read(project_dir: Path, name: str) -> str:
     return f"No openspec directory found in project."
 
 
+def docs_read(project_dir: Path, path: str = "") -> str:
+    """Read documentation from the project's docs/ directory."""
+    docs_dir = project_dir / "docs"
+    if not docs_dir.exists():
+        return "No docs/ directory found in project."
+
+    if not path:
+        # List available docs
+        files = []
+        for f in sorted(docs_dir.rglob("*.md")):
+            rel = f.relative_to(docs_dir)
+            files.append(str(rel))
+        if not files:
+            return "docs/ directory exists but contains no .md files."
+        return "Available docs:\n" + "\n".join(f"- {f}" for f in files)
+
+    resolved = _safe_resolve(project_dir, f"docs/{path}")
+    if not resolved.exists():
+        return f"Doc not found: docs/{path}"
+    try:
+        content = resolved.read_text(errors="replace")
+        if len(content) > _MAX_FILE_CHARS:
+            return content[:_MAX_FILE_CHARS] + "\n[...csonkolva]"
+        return content
+    except Exception as e:
+        return f"Error reading docs/{path}: {e}"
+
+
 def design_check(project_dir: Path, component: str) -> str:
     """Extract component info from design-snapshot.md."""
     snapshot_path = project_dir / "design-snapshot.md"
@@ -230,14 +273,16 @@ def design_check(project_dir: Path, component: str) -> str:
 def execute_tool(tool_name: str, tool_input: dict, project_dir: Path) -> str:
     """Execute a tool call and return the result as a string."""
     try:
-        if tool_name == "file_read":
+        if tool_name == "openspec_read":
+            return openspec_read(project_dir, tool_input["name"])
+        elif tool_name == "docs_read":
+            return docs_read(project_dir, tool_input.get("path", ""))
+        elif tool_name == "design_check":
+            return design_check(project_dir, tool_input["component"])
+        elif tool_name == "file_read":
             return file_read(project_dir, tool_input["path"])
         elif tool_name == "grep_search":
             return grep_search(project_dir, tool_input["pattern"], tool_input.get("path", "."))
-        elif tool_name == "openspec_read":
-            return openspec_read(project_dir, tool_input["name"])
-        elif tool_name == "design_check":
-            return design_check(project_dir, tool_input["component"])
         else:
             return f"Unknown tool: {tool_name}"
     except ValueError as e:

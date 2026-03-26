@@ -268,11 +268,16 @@ class ResponseLayers:
         yield fast_text
 
         # Wait for deep response with periodic "still thinking" updates
-        _THINKING = ["Egy pillanat, utánanézek...", "Még dolgozom rajta..."]
+        _THINKING = [
+            "Egy pillanat, utánanézek.",
+            "Még dolgozom rajta, mindjárt mondom.",
+            "Kérem szépen a türelmét, keresem az infót.",
+            "Már majdnem megvan.",
+        ]
         thinking_idx = 0
         while not deep_done.is_set():
             try:
-                await asyncio.wait_for(deep_done.wait(), timeout=4.0)
+                await asyncio.wait_for(deep_done.wait(), timeout=3.0)
             except asyncio.TimeoutError:
                 if thinking_idx < len(_THINKING):
                     yield _THINKING[thinking_idx]

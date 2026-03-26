@@ -177,6 +177,34 @@ phoneInput.addEventListener('input', () => {
     phoneBtn.disabled = !phoneInput.value.trim();
 });
 
+// Trigger project indexing when project is selected
+projectSelect.addEventListener('change', async () => {
+    const projectId = projectSelect.value;
+    if (!projectId) return;
+    try {
+        const resp = await fetch('/api/index-project', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({project: projectId}),
+        });
+        const data = await resp.json();
+        if (data.status === 'indexing') {
+            setStatus('Projekt indexelése...', 'info');
+            // Brief indicator, non-blocking
+            setTimeout(() => {
+                if (statusEl.textContent === 'Projekt indexelése...') {
+                    setStatus('Kész a hívásra', 'success');
+                }
+            }, 4000);
+        } else if (data.status === 'cached') {
+            setStatus('Kész a hívásra', 'success');
+        }
+    } catch (err) {
+        // Non-critical — indexing is optional, call still works without it
+        console.warn('Index trigger failed:', err);
+    }
+});
+
 // Initialize
 loadProjects();
 initDevice();
