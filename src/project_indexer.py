@@ -262,9 +262,19 @@ async def generate_index(project_dir: str | Path, project_id: str) -> dict:
         max_tokens=1000,
     )
 
-    # Parse response
+    # Parse response — strip markdown code fences if present
+    raw_text = response.content[0].text if response.content else ""
+    raw_text = raw_text.strip()
+    if raw_text.startswith("```"):
+        # Remove ```json ... ``` wrapper
+        lines = raw_text.split("\n")
+        if lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        raw_text = "\n".join(lines)
     try:
-        summary = json.loads(response.content[0].text)
+        summary = json.loads(raw_text)
     except (json.JSONDecodeError, IndexError):
         log.error("index_parse_error", raw=response.content[0].text[:200] if response.content else "")
         summary = {
