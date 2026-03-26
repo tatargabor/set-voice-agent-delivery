@@ -183,14 +183,19 @@ def read_cache(project_id: str, project_dir: Path) -> dict | None:
     except (json.JSONDecodeError, OSError):
         return None
 
-    # Check mtimes
+    # Check mtimes — only invalidate if existing files were modified
+    # Missing files don't invalidate (project may have been cleaned/moved)
     cached_mtimes = data.get("source_files", {})
     for rel_path, cached_mtime in cached_mtimes.items():
         full_path = project_dir / rel_path
-        if not full_path.exists():
-            return None  # File deleted
-        if full_path.stat().st_mtime > cached_mtime:
+        if full_path.exists() and full_path.stat().st_mtime > cached_mtime:
             return None  # File modified
+
+    # Also check for new files not in cache
+    current_files = _collect_source_files(project_dir)
+    new_files = set(current_files.keys()) - set(cached_mtimes.keys())
+    if new_files:
+        return None  # New files added since cache was built
 
     return data
 

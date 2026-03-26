@@ -69,13 +69,14 @@ class CallPipeline:
                     self.metrics.barge_in_count += 1
                 await self._transition(CallState.LISTENING, reason="barge-in")
 
-            if self._state == CallState.LISTENING or (
-                self._state == CallState.PROCESSING and not event.is_interim
-            ):
-                # Transition on first event (interim or final); also accept
-                # final events while already PROCESSING (interim→final upgrade)
-                if self._state == CallState.LISTENING:
-                    await self._transition(CallState.PROCESSING, reason="interim" if event.is_interim else "endpoint detected")
+            if self._state == CallState.LISTENING:
+                # New utterance — transition to PROCESSING
+                await self._transition(CallState.PROCESSING, reason="interim" if event.is_interim else "endpoint detected")
+                await self._stt_queue.put(event)
+            elif self._state == CallState.PROCESSING and not event.is_interim:
+                # Final arriving while PROCESSING — only pass if it's an
+                # interim→final upgrade (llm_loop handles the match/miss).
+                # Don't transition again, just enqueue the final event.
                 await self._stt_queue.put(event)
 
             if self.state_machine.is_ended:
@@ -131,7 +132,18 @@ class CallPipeline:
                 # Interim matched final — use speculative result
                 log.info("speculative_hit", text=event.text)
                 await speculative_done.wait()
-                sentences = list(speculative_sentences)
+                # Send collected sentences to TTS
+                full_response = ""
+                for i, sentence in enumerate(speculative_sentences):
+                    if i == 0:
+                        elapsed_ms = int((time.monotonic() - t0) * 1000)
+                        log.info("first_sentence", text=sentence, latency_ms=elapsed_ms)
+                        if self.metrics:
+                            self.metrics.response_times_ms.append(elapsed_ms)
+                    else:
+                        log.debug("sentence_chunk", text=sentence)
+                    full_response += sentence + " "
+                    await self._tts_queue.put(sentence)
             else:
                 if speculative_task:
                     # Interim didn't match — cancel speculative work
@@ -156,32 +168,29 @@ class CallPipeline:
                     if ctx.history and ctx.history[-1].get("content") == speculative_text:
                         ctx.history.pop()
 
-                # Generate fresh response for the final transcript
-                sentences = []
+                # Stream response directly to TTS as sentences arrive
+                full_response = ""
+                first_chunk = True
                 if self.response_layers:
                     gen = self.response_layers.respond(ctx, event.text, system_prompt)
                 else:
                     gen = self.agent.respond_stream(ctx, event.text)
                 async for sentence in gen:
-                    sentences.append(sentence)
+                    if first_chunk:
+                        elapsed_ms = int((time.monotonic() - t0) * 1000)
+                        log.info("first_sentence", text=sentence, latency_ms=elapsed_ms)
+                        if self.metrics:
+                            self.metrics.response_times_ms.append(elapsed_ms)
+                        first_chunk = False
+                    else:
+                        log.debug("sentence_chunk", text=sentence)
+                    full_response += sentence + " "
+                    await self._tts_queue.put(sentence)
 
             # Reset speculative state
             speculative_task = None
             speculative_text = None
             speculative_sentences.clear()
-
-            # Send sentences to TTS
-            full_response = ""
-            for i, sentence in enumerate(sentences):
-                if i == 0:
-                    elapsed_ms = int((time.monotonic() - t0) * 1000)
-                    log.info("first_sentence", text=sentence, latency_ms=elapsed_ms)
-                    if self.metrics:
-                        self.metrics.response_times_ms.append(elapsed_ms)
-                else:
-                    log.debug("sentence_chunk", text=sentence)
-                full_response += sentence + " "
-                await self._tts_queue.put(sentence)
 
             # Signal end of this turn's chunks
             await self._tts_queue.put(_TURN_END)
@@ -248,9 +257,14 @@ class CallPipeline:
                 self.metrics.tts_chars += len(text)
 
             # Transition to SPEAKING on first chunk of a turn
-            if self._state != CallState.SPEAKING and not self.state_machine.is_ended:
+            if self._state == CallState.PROCESSING and not self.state_machine.is_ended:
                 await self._transition(CallState.SPEAKING, reason="tts start")
                 self._tts_cancel_event.clear()
+            elif self._state not in (CallState.SPEAKING, CallState.PROCESSING) and not self.state_machine.is_ended:
+                # Stale TTS chunk from cancelled turn — skip it
+                log.info("tts_skipped_stale", state=self._state.value, text=text[:50])
+                self._tts_queue.task_done()
+                continue
 
             try:
                 async for audio_chunk in self.tts.synthesize_stream(text):

@@ -100,41 +100,59 @@ class SonioxSTTProvider(STTProvider):
                     current_text += token.text
 
     async def _transcribe_with_interim(self) -> AsyncIterator[TranscriptEvent]:
-        """Interim-aware logic — yield speculative events on silence gaps."""
+        """Interim-aware logic — yield speculative events on silence gaps.
+
+        Uses a queue bridge to avoid cancelling __anext__() on the Soniox
+        async iterator, which can corrupt its internal state.
+        """
         current_text = ""
-        last_token_time = time.monotonic()
         interim_yielded = False
         silence_timeout = self._interim_silence_ms / 1000.0
 
-        # Wrap receive_events as an async iterator we can poll with timeout
-        event_iter = self._session.receive_events().__aiter__()
+        # Bridge: read Soniox events into a queue so we can poll with timeout
+        _SENTINEL = object()
+        event_queue: asyncio.Queue = asyncio.Queue()
 
-        while True:
+        async def _reader():
             try:
-                event = await asyncio.wait_for(
-                    event_iter.__anext__(), timeout=silence_timeout
-                )
-            except asyncio.TimeoutError:
-                # Silence gap detected — check if we should yield interim
-                if not interim_yielded and current_text.strip():
-                    word_count = len(current_text.strip().split())
-                    if word_count >= self._interim_min_words:
-                        log.info("interim_transcript", text=current_text.strip(), words=word_count)
-                        yield TranscriptEvent(text=current_text.strip(), is_interim=True)
-                        interim_yielded = True
-                continue
-            except StopAsyncIteration:
-                # Stream ended — yield any remaining text as final
-                if current_text.strip():
-                    yield TranscriptEvent(text=current_text.strip(), is_interim=False)
-                break
+                async for event in self._session.receive_events():
+                    await event_queue.put(event)
+            finally:
+                await event_queue.put(_SENTINEL)
 
-            for token in event.tokens:
-                if token.text in ("<fin>", "<end>"):
+        reader_task = asyncio.create_task(_reader())
+
+        try:
+            while True:
+                try:
+                    event = await asyncio.wait_for(event_queue.get(), timeout=silence_timeout)
+                except asyncio.TimeoutError:
+                    # Silence gap detected — check if we should yield interim
+                    if not interim_yielded and current_text.strip():
+                        word_count = len(current_text.strip().split())
+                        if word_count >= self._interim_min_words:
+                            log.info("interim_transcript", text=current_text.strip(), words=word_count)
+                            yield TranscriptEvent(text=current_text.strip(), is_interim=True)
+                            interim_yielded = True
+                    continue
+
+                if event is _SENTINEL:
+                    # Stream ended — yield any remaining text as final
                     if current_text.strip():
                         yield TranscriptEvent(text=current_text.strip(), is_interim=False)
-                        current_text = ""
-                        interim_yielded = False
-                elif getattr(token, "is_final", True):
-                    current_text += token.text
-                    last_token_time = time.monotonic()
+                    break
+
+                for token in event.tokens:
+                    if token.text in ("<fin>", "<end>"):
+                        if current_text.strip():
+                            yield TranscriptEvent(text=current_text.strip(), is_interim=False)
+                            current_text = ""
+                            interim_yielded = False
+                    elif getattr(token, "is_final", True):
+                        current_text += token.text
+        finally:
+            reader_task.cancel()
+            try:
+                await reader_task
+            except asyncio.CancelledError:
+                pass

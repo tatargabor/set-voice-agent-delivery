@@ -25,8 +25,8 @@ def is_sentence_boundary(text: str) -> bool:
     last_char = text.rstrip()[-1]
     if last_char in '.!?':
         return True
-    # Split on comma for long clauses (Hungarian sentences tend to be long)
-    if last_char == ',' and len(text.strip()) > 40:
+    # Split on comma only for very long clauses to avoid mid-sentence cuts
+    if last_char == ',' and len(text.strip()) > 80:
         return True
     return False
 
@@ -122,11 +122,16 @@ Szabályok:
     async def get_greeting_stream(self, ctx: CallContext) -> AsyncGenerator[str, None]:
         """Stream the opening greeting sentence-by-sentence.
 
+        Uses Sonnet with a minimal system prompt (no project context) for
+        quality Hungarian while staying fast (~1-2 sec vs 5 sec with full prompt).
         Yields sentence chunks. After exhaustion, self.last_usage has token counts.
         """
+        from .config import get_settings
+        greeting_model = get_settings().models.deep  # Sonnet — quality Hungarian
+
         async with self.client.messages.stream(
-            model=self.model,
-            system=self._build_system_prompt(ctx),
+            model=greeting_model,
+            system="Telefonos ügyfélszolgálati agent vagy. Természetes, barátságos magyar köszöntést adj. Ne használj markdown formázást, csillagokat, vagy sortöréseket — ez telefonon lesz felolvasva. Cég: " + ctx.company_name + ".",
             messages=[{"role": "user", "content": self._greeting_instruction(ctx)}],
             max_tokens=150,
         ) as stream:

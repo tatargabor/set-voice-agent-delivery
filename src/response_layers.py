@@ -231,26 +231,41 @@ class ResponseLayers:
             ctx.history.append({"role": "assistant", "content": full_text.strip()})
             return
 
-        # Fire both in parallel
+        settings = get_settings()
+        mode = settings.research.mode
+        has_project = ctx.project_dir and Path(ctx.project_dir).exists()
+        is_research = _is_research_question(customer_text)
+
+        # For research questions: skip fast ack (it would say something dumb
+        # before tools run), just say "utánanézek" and go straight to tool_use
+        if is_research and has_project:
+            yield "Utánanézek!"
+
+            pdir = Path(ctx.project_dir)
+            use_agent = mode == "local_agent" or mode == "auto"
+            if use_agent:
+                sentences = await self._deep_response_with_agent(ctx, pdir)
+            else:
+                sentences = await self._deep_response_with_tools(ctx, system_prompt, pdir)
+
+            full_parts = ["Utánanézek!"] + sentences
+            for sentence in sentences:
+                yield sentence
+            ctx.history.append({"role": "assistant", "content": " ".join(full_parts).strip()})
+            return
+
+        # Non-research: fire fast ack + deep streaming in parallel
         fast_task = asyncio.create_task(
             self._fast_ack(customer_text, ctx.company_name)
         )
 
-        # Collect deep response sentences while fast ack is running
         deep_sentences = []
         deep_done = asyncio.Event()
 
         async def _collect_deep():
-            settings = get_settings()
-            mode = settings.research.mode
-            has_project = ctx.project_dir and Path(ctx.project_dir).exists()
-
             if has_project:
                 pdir = Path(ctx.project_dir)
-                use_agent = (
-                    mode == "local_agent"
-                    or (mode == "auto" and _is_research_question(customer_text))
-                )
+                use_agent = mode == "local_agent" or (mode == "auto" and is_research)
                 if use_agent:
                     sentences = await self._deep_response_with_agent(ctx, pdir)
                 else:
@@ -267,21 +282,14 @@ class ResponseLayers:
         fast_text = await fast_task
         yield fast_text
 
-        # Wait for deep response with periodic "still thinking" updates
-        _THINKING = [
-            "Egy pillanat, utánanézek.",
-            "Még dolgozom rajta, mindjárt mondom.",
-            "Kérem szépen a türelmét, keresem az infót.",
-            "Már majdnem megvan.",
-        ]
-        thinking_idx = 0
-        while not deep_done.is_set():
+        # Wait for deep response — max 1 thinking message after 3 seconds
+        if not deep_done.is_set():
             try:
                 await asyncio.wait_for(deep_done.wait(), timeout=3.0)
             except asyncio.TimeoutError:
-                if thinking_idx < len(_THINKING):
-                    yield _THINKING[thinking_idx]
-                    thinking_idx += 1
+                yield "Egy pillanat, mindjárt mondom."
+                # Now just wait for it to finish, no more thinking messages
+                await deep_done.wait()
 
         # Yield deep response sentences
         for sentence in deep_sentences:

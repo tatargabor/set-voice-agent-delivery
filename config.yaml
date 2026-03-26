@@ -3,7 +3,7 @@
 
 models:
   fast: claude-haiku-4-5        # Fast ack layer
-  deep: claude-opus-4-6         # Deep response + tool_use
+  deep: claude-sonnet-4-6       # Deep response + tool_use (Opus too slow for realtime)
   agent: claude-sonnet-4-6      # Local agent research
 
 tts:
@@ -17,7 +17,7 @@ voice:
   max_tokens_agent: 200         # Local agent response
   max_tokens_stream: 500        # Streaming (no tools)
   endpoint_delay_ms: 800        # Soniox silence detection threshold (was 1200)
-  interim_enabled: true         # Speculative transcript processing
+  interim_enabled: false        # Speculative transcript processing (debugging)
   interim_min_words: 3          # Min words before interim fires
   interim_silence_ms: 500       # Silence gap to trigger interim (ms)
 
