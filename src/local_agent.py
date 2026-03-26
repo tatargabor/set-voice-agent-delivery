@@ -62,7 +62,7 @@ async def research(question: str, project_dir: Path, cache: AgentCache | None = 
             response = await asyncio.wait_for(
                 client.messages.create(
                     model=settings.models.agent,
-                    system=system_prompt,
+                    system=[{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
                     messages=messages,
                     max_tokens=settings.voice.max_tokens_agent,
                     tools=TOOL_DEFINITIONS,

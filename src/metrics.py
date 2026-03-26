@@ -20,6 +20,8 @@ class CallMetrics:
     claude_input_tokens: int = 0
     claude_output_tokens: int = 0
     claude_requests: int = 0
+    cache_read_input_tokens: int = 0
+    cache_creation_input_tokens: int = 0
 
     # Google TTS
     tts_chars: int = 0
@@ -48,6 +50,10 @@ class CallMetrics:
         self.claude_output_tokens += output_tokens
         self.claude_requests += 1
 
+    def add_cache_usage(self, read_tokens: int, creation_tokens: int) -> None:
+        self.cache_read_input_tokens += read_tokens
+        self.cache_creation_input_tokens += creation_tokens
+
     def add_tool_calls(self, calls: list[dict]) -> None:
         self.tool_calls.extend(calls)
 
@@ -71,9 +77,22 @@ def mask_phone(phone: str) -> str:
 
 
 def calculate_costs(metrics: CallMetrics) -> dict[str, float]:
-    """Calculate per-provider costs from collected metrics."""
+    """Calculate per-provider costs from collected metrics.
+
+    Claude pricing (Sonnet 4.6): $3/M input, $15/M output.
+    Cache: read hits at 0.1x ($0.30/M), write at 1.25x ($3.75/M).
+    """
     twilio = abs(metrics.twilio_price) if metrics.twilio_price else 0.0
-    claude = (metrics.claude_input_tokens * 3 + metrics.claude_output_tokens * 15) / 1_000_000
+
+    # Claude cost with cache-aware pricing
+    regular_input = metrics.claude_input_tokens - metrics.cache_read_input_tokens - metrics.cache_creation_input_tokens
+    claude = (
+        max(0, regular_input) * 3
+        + metrics.cache_read_input_tokens * 0.3      # 0.1x base
+        + metrics.cache_creation_input_tokens * 3.75  # 1.25x base
+        + metrics.claude_output_tokens * 15
+    ) / 1_000_000
+
     google_tts = metrics.tts_chars * 4 / 1_000_000
     soniox_stt = (metrics.stt_audio_ms / 1000 / 60) * 0.002
 

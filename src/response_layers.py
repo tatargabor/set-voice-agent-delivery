@@ -79,7 +79,7 @@ class ResponseLayers:
         """Generate substantive streaming response via deep model."""
         async with self.client.messages.stream(
             model=self.deep_model,
-            system=system_prompt,
+            system=[{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
             messages=ctx.history,
             max_tokens=get_settings().voice.max_tokens_stream,
         ) as stream:
@@ -98,6 +98,8 @@ class ResponseLayers:
             self.last_usage = {
                 "input_tokens": final.usage.input_tokens,
                 "output_tokens": final.usage.output_tokens,
+                "cache_read_input_tokens": getattr(final.usage, "cache_read_input_tokens", 0) or 0,
+                "cache_creation_input_tokens": getattr(final.usage, "cache_creation_input_tokens", 0) or 0,
             }
 
     async def _deep_response_with_tools(
@@ -122,7 +124,7 @@ class ResponseLayers:
 
             response = await self.client.messages.create(
                 model=self.deep_model,
-                system=system_prompt,
+                system=[{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
                 messages=messages,
                 max_tokens=settings.voice.max_tokens_tool_use,
                 tools=TOOL_DEFINITIONS,
@@ -131,6 +133,8 @@ class ResponseLayers:
             self.last_usage = {
                 "input_tokens": response.usage.input_tokens,
                 "output_tokens": response.usage.output_tokens,
+                "cache_read_input_tokens": getattr(response.usage, "cache_read_input_tokens", 0) or 0,
+                "cache_creation_input_tokens": getattr(response.usage, "cache_creation_input_tokens", 0) or 0,
             }
 
             if response.stop_reason == "tool_use":

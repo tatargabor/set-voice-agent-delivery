@@ -217,6 +217,10 @@ class CallPipeline:
                     self.response_layers.last_usage["input_tokens"],
                     self.response_layers.last_usage["output_tokens"],
                 )
+                self.metrics.add_cache_usage(
+                    self.response_layers.last_usage.get("cache_read_input_tokens", 0),
+                    self.response_layers.last_usage.get("cache_creation_input_tokens", 0),
+                )
             if self.response_layers._fast_usage and self.metrics:
                 self.metrics.add_claude_usage(
                     self.response_layers._fast_usage["input_tokens"],

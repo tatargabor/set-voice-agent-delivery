@@ -68,6 +68,8 @@ class CallLogger:
                 "claude_input_tokens": metrics.claude_input_tokens,
                 "claude_output_tokens": metrics.claude_output_tokens,
                 "claude_requests": metrics.claude_requests,
+                "cache_read_input_tokens": metrics.cache_read_input_tokens,
+                "cache_creation_input_tokens": metrics.cache_creation_input_tokens,
                 "barge_in_count": metrics.barge_in_count,
                 "turn_count": metrics.turn_count,
             },
