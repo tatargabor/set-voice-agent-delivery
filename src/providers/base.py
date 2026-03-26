@@ -1,15 +1,23 @@
 """Abstract base classes for voice agent providers."""
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import AsyncIterator
+
+
+@dataclass
+class TranscriptEvent:
+    """A transcript event from STT — either interim (speculative) or final."""
+    text: str
+    is_interim: bool = False
 
 
 class STTProvider(ABC):
     """Speech-to-Text provider interface."""
 
     @abstractmethod
-    async def transcribe_stream(self, audio_chunks: AsyncIterator[bytes]) -> AsyncIterator[str]:
-        """Stream audio chunks, yield partial transcripts."""
+    async def transcribe_stream(self, audio_chunks: AsyncIterator[bytes]) -> AsyncIterator[TranscriptEvent]:
+        """Stream audio chunks, yield TranscriptEvent (interim or final)."""
 
     @abstractmethod
     async def connect(self) -> None:

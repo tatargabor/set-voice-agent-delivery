@@ -46,8 +46,8 @@ async def test_tts_to_stt_roundtrip():
                 yield audio_bytes[i : i + chunk_size]
 
         transcripts = []
-        async for text in stt.transcribe_stream(_audio_source()):
-            transcripts.append(text)
+        async for event in stt.transcribe_stream(_audio_source()):
+            transcripts.append(event.text)
 
         full_text = " ".join(transcripts).lower()
         assert len(full_text) > 0, "Should produce transcript"
@@ -82,8 +82,8 @@ async def test_agent_response_to_audio(call_context):
                 yield customer_audio[i : i + chunk_size]
 
         transcripts = []
-        async for text in stt.transcribe_stream(_audio_source()):
-            transcripts.append(text)
+        async for event in stt.transcribe_stream(_audio_source()):
+            transcripts.append(event.text)
 
         customer_text = " ".join(transcripts)
         assert len(customer_text) > 0, "STT should produce text"

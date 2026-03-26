@@ -29,8 +29,8 @@ async def test_stt_transcribes_hungarian_audio():
             yield audio_bytes[i : i + chunk_size]
 
     transcripts = []
-    async for text in stt.transcribe_stream(_audio_source()):
-        transcripts.append(text)
+    async for event in stt.transcribe_stream(_audio_source()):
+        transcripts.append(event.text)
 
     await stt.disconnect()
 

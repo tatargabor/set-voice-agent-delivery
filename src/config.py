@@ -28,7 +28,10 @@ class VoiceConfig(BaseModel):
     max_tokens_tool_use: int = 150
     max_tokens_agent: int = 100
     max_tokens_stream: int = 300
-    endpoint_delay_ms: int = 1200
+    endpoint_delay_ms: int = 800
+    interim_enabled: bool = True
+    interim_min_words: int = 3
+    interim_silence_ms: int = 500
 
 
 class ResearchConfig(BaseModel):

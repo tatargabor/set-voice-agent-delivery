@@ -1,12 +1,16 @@
 """Soniox streaming STT provider using AsyncRealtimeSTTSession."""
 
 import asyncio
+import time
 from typing import AsyncIterator
 
+import structlog
 from soniox import AsyncSonioxClient
 from soniox.types import RealtimeSTTConfig
 
-from .base import STTProvider
+from .base import STTProvider, TranscriptEvent
+
+log = structlog.get_logger()
 
 
 class SonioxSTTProvider(STTProvider):
@@ -19,9 +23,13 @@ class SonioxSTTProvider(STTProvider):
         endpoint_delay_ms: int | None = None,
     ):
         from ..config import get_settings
+        settings = get_settings()
         self._model = model
         self._sample_rate = sample_rate
-        self._endpoint_delay_ms = endpoint_delay_ms or get_settings().voice.endpoint_delay_ms
+        self._endpoint_delay_ms = endpoint_delay_ms or settings.voice.endpoint_delay_ms
+        self._interim_enabled = settings.voice.interim_enabled
+        self._interim_min_words = settings.voice.interim_min_words
+        self._interim_silence_ms = settings.voice.interim_silence_ms
         self._client: AsyncSonioxClient | None = None
         self._session = None
 
@@ -47,11 +55,12 @@ class SonioxSTTProvider(STTProvider):
             self._session = None
         self._client = None
 
-    async def transcribe_stream(self, audio_chunks: AsyncIterator[bytes]) -> AsyncIterator[str]:
-        """Send audio chunks to Soniox, yield transcript strings.
+    async def transcribe_stream(self, audio_chunks: AsyncIterator[bytes]) -> AsyncIterator[TranscriptEvent]:
+        """Send audio chunks to Soniox, yield TranscriptEvent objects.
 
-        Yields partial transcript strings as tokens arrive. Finalized
-        transcripts (after endpoint detection) are yielded as complete strings.
+        When interim is enabled, yields speculative interim events when enough
+        words accumulate and silence is detected. Always yields a final event
+        on endpoint detection (<fin>/<end>).
         """
         if self._session is None:
             raise RuntimeError("Not connected. Call connect() first.")
@@ -65,19 +74,67 @@ class SonioxSTTProvider(STTProvider):
         feed_task = asyncio.create_task(_feed_audio())
 
         try:
-            current_text = ""
-            async for event in self._session.receive_events():
-                for token in event.tokens:
-                    if token.text in ("<fin>", "<end>"):
-                        if current_text.strip():
-                            yield current_text.strip()
-                            current_text = ""
-                    elif getattr(token, "is_final", True):
-                        # Only accumulate finalized tokens to avoid partial duplicates
-                        current_text += token.text
+            if self._interim_enabled:
+                async for event in self._transcribe_with_interim():
+                    yield event
+            else:
+                async for event in self._transcribe_final_only():
+                    yield event
         finally:
             feed_task.cancel()
             try:
                 await feed_task
             except asyncio.CancelledError:
                 pass
+
+    async def _transcribe_final_only(self) -> AsyncIterator[TranscriptEvent]:
+        """Original logic — only yield on <fin>/<end>."""
+        current_text = ""
+        async for event in self._session.receive_events():
+            for token in event.tokens:
+                if token.text in ("<fin>", "<end>"):
+                    if current_text.strip():
+                        yield TranscriptEvent(text=current_text.strip(), is_interim=False)
+                        current_text = ""
+                elif getattr(token, "is_final", True):
+                    current_text += token.text
+
+    async def _transcribe_with_interim(self) -> AsyncIterator[TranscriptEvent]:
+        """Interim-aware logic — yield speculative events on silence gaps."""
+        current_text = ""
+        last_token_time = time.monotonic()
+        interim_yielded = False
+        silence_timeout = self._interim_silence_ms / 1000.0
+
+        # Wrap receive_events as an async iterator we can poll with timeout
+        event_iter = self._session.receive_events().__aiter__()
+
+        while True:
+            try:
+                event = await asyncio.wait_for(
+                    event_iter.__anext__(), timeout=silence_timeout
+                )
+            except asyncio.TimeoutError:
+                # Silence gap detected — check if we should yield interim
+                if not interim_yielded and current_text.strip():
+                    word_count = len(current_text.strip().split())
+                    if word_count >= self._interim_min_words:
+                        log.info("interim_transcript", text=current_text.strip(), words=word_count)
+                        yield TranscriptEvent(text=current_text.strip(), is_interim=True)
+                        interim_yielded = True
+                continue
+            except StopAsyncIteration:
+                # Stream ended — yield any remaining text as final
+                if current_text.strip():
+                    yield TranscriptEvent(text=current_text.strip(), is_interim=False)
+                break
+
+            for token in event.tokens:
+                if token.text in ("<fin>", "<end>"):
+                    if current_text.strip():
+                        yield TranscriptEvent(text=current_text.strip(), is_interim=False)
+                        current_text = ""
+                        interim_yielded = False
+                elif getattr(token, "is_final", True):
+                    current_text += token.text
+                    last_token_time = time.monotonic()

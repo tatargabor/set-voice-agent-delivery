@@ -12,11 +12,14 @@ tts:
   sample_rate: 8000
 
 voice:
-  max_sentences: 3              # Max sentences per response
-  max_tokens_tool_use: 150      # Deep layer with tool_use
-  max_tokens_agent: 100         # Local agent response
-  max_tokens_stream: 300        # Streaming (no tools)
-  endpoint_delay_ms: 1200       # Soniox silence detection threshold
+  max_sentences: 6              # Max sentences per response (agent decides actual length)
+  max_tokens_tool_use: 300      # Deep layer with tool_use
+  max_tokens_agent: 200         # Local agent response
+  max_tokens_stream: 500        # Streaming (no tools)
+  endpoint_delay_ms: 800        # Soniox silence detection threshold (was 1200)
+  interim_enabled: true         # Speculative transcript processing
+  interim_min_words: 3          # Min words before interim fires
+  interim_silence_ms: 500       # Silence gap to trigger interim (ms)
 
 research:
   mode: auto                    # tool_use | local_agent | auto

@@ -8,7 +8,7 @@ from .agent import ConversationAgent, CallContext
 from .metrics import CallMetrics
 from .response_layers import ResponseLayers
 from .state import CallState, CallStateMachine
-from .providers.base import STTProvider, TTSProvider, TelephonyProvider
+from .providers.base import STTProvider, TTSProvider, TelephonyProvider, TranscriptEvent
 
 log = structlog.get_logger()
 
@@ -37,7 +37,7 @@ class CallPipeline:
         self._state_lock = asyncio.Lock()
 
         # Inter-task queues
-        self._stt_queue: asyncio.Queue[str] = asyncio.Queue()
+        self._stt_queue: asyncio.Queue[TranscriptEvent] = asyncio.Queue()
         self._tts_queue: asyncio.Queue[str] = asyncio.Queue()
 
         # Barge-in control
@@ -53,90 +53,141 @@ class CallPipeline:
         return self.state_machine.state
 
     async def _stt_loop(self, call_id: str) -> None:
-        """Read audio from telephony → STT → put transcripts on queue."""
+        """Read audio from telephony → STT → put TranscriptEvents on queue."""
         audio_stream = self.telephony.get_audio_stream(call_id)
 
-        async for transcript in self.stt.transcribe_stream(audio_stream):
-            if not transcript.strip():
+        async for event in self.stt.transcribe_stream(audio_stream):
+            if not event.text.strip():
                 continue
 
             if self._state == CallState.SPEAKING:
                 # Barge-in: customer spoke while agent was speaking
-                log.info("barge_in_detected", transcript=transcript)
+                log.info("barge_in_detected", transcript=event.text, is_interim=event.is_interim)
                 self._tts_cancel_event.set()
                 await self.telephony.clear_audio(call_id)
                 if self.metrics:
                     self.metrics.barge_in_count += 1
                 await self._transition(CallState.LISTENING, reason="barge-in")
 
-            if self._state == CallState.LISTENING:
-                await self._transition(CallState.PROCESSING, reason="endpoint detected")
-                await self._stt_queue.put(transcript)
+            if self._state == CallState.LISTENING or (
+                self._state == CallState.PROCESSING and not event.is_interim
+            ):
+                # Transition on first event (interim or final); also accept
+                # final events while already PROCESSING (interim→final upgrade)
+                if self._state == CallState.LISTENING:
+                    await self._transition(CallState.PROCESSING, reason="interim" if event.is_interim else "endpoint detected")
+                await self._stt_queue.put(event)
 
             if self.state_machine.is_ended:
                 break
 
     async def _llm_loop(self, ctx: CallContext) -> None:
-        """Get transcripts → dual-layer or streaming response → TTS queue."""
+        """Get TranscriptEvents → speculative or direct LLM response → TTS queue.
+
+        On interim events: start LLM speculatively.
+        On final events: if text matches interim, use existing result; otherwise cancel + restart.
+        """
         system_prompt = self.agent._build_system_prompt(ctx)
+
+        # Speculative state
+        speculative_task: asyncio.Task | None = None
+        speculative_text: str | None = None
+        speculative_sentences: list[str] = []
+        speculative_done = asyncio.Event()
 
         while not self.state_machine.is_ended:
             try:
-                transcript = await asyncio.wait_for(self._stt_queue.get(), timeout=1.0)
+                event = await asyncio.wait_for(self._stt_queue.get(), timeout=1.0)
             except asyncio.TimeoutError:
                 continue
 
-            log.info("processing_transcript", text=transcript)
+            log.info("processing_transcript", text=event.text, is_interim=event.is_interim)
 
+            if event.is_interim:
+                # Start speculative LLM — don't send to TTS yet, just collect
+                speculative_text = event.text
+                speculative_sentences.clear()
+                speculative_done.clear()
+
+                async def _speculative_collect(text: str):
+                    try:
+                        if self.response_layers:
+                            gen = self.response_layers.respond(ctx, text, system_prompt)
+                        else:
+                            gen = self.agent.respond_stream(ctx, text)
+                        async for sentence in gen:
+                            speculative_sentences.append(sentence)
+                    finally:
+                        speculative_done.set()
+
+                speculative_task = asyncio.create_task(_speculative_collect(event.text))
+                log.info("speculative_llm_started", text=event.text)
+                continue
+
+            # Final event — decide whether to use speculative result or restart
             t0 = time.monotonic()
-            full_response = ""
-            first_chunk = True
 
-            # Use dual-layer if available, otherwise streaming agent
-            if self.response_layers:
-                response_gen = self.response_layers.respond(ctx, transcript, system_prompt)
+            if speculative_task and speculative_text == event.text:
+                # Interim matched final — use speculative result
+                log.info("speculative_hit", text=event.text)
+                await speculative_done.wait()
+                sentences = list(speculative_sentences)
             else:
-                response_gen = self.agent.respond_stream(ctx, transcript)
+                if speculative_task:
+                    # Interim didn't match — cancel speculative work
+                    log.info("speculative_miss", interim=speculative_text, final=event.text)
+                    speculative_task.cancel()
+                    try:
+                        await speculative_task
+                    except asyncio.CancelledError:
+                        pass
+                    # Clear TTS queue and cancel any playing audio
+                    self._tts_cancel_event.set()
+                    while not self._tts_queue.empty():
+                        try:
+                            self._tts_queue.get_nowait()
+                            self._tts_queue.task_done()
+                        except asyncio.QueueEmpty:
+                            break
+                    self._tts_cancel_event.clear()
+                    # Undo the interim's history entry (respond() appends to ctx.history)
+                    if ctx.history and ctx.history[-1].get("role") == "assistant":
+                        ctx.history.pop()
+                    if ctx.history and ctx.history[-1].get("content") == speculative_text:
+                        ctx.history.pop()
 
-            async for sentence in response_gen:
-                if first_chunk:
+                # Generate fresh response for the final transcript
+                sentences = []
+                if self.response_layers:
+                    gen = self.response_layers.respond(ctx, event.text, system_prompt)
+                else:
+                    gen = self.agent.respond_stream(ctx, event.text)
+                async for sentence in gen:
+                    sentences.append(sentence)
+
+            # Reset speculative state
+            speculative_task = None
+            speculative_text = None
+            speculative_sentences.clear()
+
+            # Send sentences to TTS
+            full_response = ""
+            for i, sentence in enumerate(sentences):
+                if i == 0:
                     elapsed_ms = int((time.monotonic() - t0) * 1000)
                     log.info("first_sentence", text=sentence, latency_ms=elapsed_ms)
                     if self.metrics:
                         self.metrics.response_times_ms.append(elapsed_ms)
-                    first_chunk = False
                 else:
                     log.debug("sentence_chunk", text=sentence)
-
                 full_response += sentence + " "
                 await self._tts_queue.put(sentence)
 
             # Signal end of this turn's chunks
             await self._tts_queue.put(_TURN_END)
 
-            # Track usage from response layers or agent
-            if self.response_layers:
-                if self.response_layers.last_usage and self.metrics:
-                    self.metrics.add_claude_usage(
-                        self.response_layers.last_usage["input_tokens"],
-                        self.response_layers.last_usage["output_tokens"],
-                    )
-                # Also track fast ack usage
-                if self.response_layers._fast_usage and self.metrics:
-                    self.metrics.add_claude_usage(
-                        self.response_layers._fast_usage["input_tokens"],
-                        self.response_layers._fast_usage["output_tokens"],
-                    )
-                    self.response_layers._fast_usage = None
-                # Track tool calls
-                if self.response_layers.tool_calls and self.metrics:
-                    self.metrics.add_tool_calls(self.response_layers.tool_calls)
-                    self.response_layers.tool_calls = []
-            elif self.agent.last_usage and self.metrics:
-                self.metrics.add_claude_usage(
-                    self.agent.last_usage["input_tokens"],
-                    self.agent.last_usage["output_tokens"],
-                )
+            # Track usage
+            self._track_usage()
 
             if self.metrics:
                 self.metrics.turn_count += 1
@@ -148,6 +199,29 @@ class CallPipeline:
                 await asyncio.sleep(3)
                 await self._transition(CallState.ENDED, reason="agent farewell")
                 break
+
+    def _track_usage(self) -> None:
+        """Track Claude API usage from response layers or agent."""
+        if self.response_layers:
+            if self.response_layers.last_usage and self.metrics:
+                self.metrics.add_claude_usage(
+                    self.response_layers.last_usage["input_tokens"],
+                    self.response_layers.last_usage["output_tokens"],
+                )
+            if self.response_layers._fast_usage and self.metrics:
+                self.metrics.add_claude_usage(
+                    self.response_layers._fast_usage["input_tokens"],
+                    self.response_layers._fast_usage["output_tokens"],
+                )
+                self.response_layers._fast_usage = None
+            if self.response_layers.tool_calls and self.metrics:
+                self.metrics.add_tool_calls(self.response_layers.tool_calls)
+                self.response_layers.tool_calls = []
+        elif self.agent.last_usage and self.metrics:
+            self.metrics.add_claude_usage(
+                self.agent.last_usage["input_tokens"],
+                self.agent.last_usage["output_tokens"],
+            )
 
     async def _tts_loop(self, call_id: str) -> None:
         """Get sentence chunks → TTS → send audio to telephony.
