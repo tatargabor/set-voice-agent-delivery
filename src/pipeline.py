@@ -12,6 +12,40 @@ from .providers.base import STTProvider, TTSProvider, TelephonyProvider, Transcr
 
 log = structlog.get_logger()
 
+# --- Backchannel filter ---
+
+_BACKCHANNEL_WORDS = frozenset({
+    "mhm", "aha", "igen", "ja", "jó", "oké", "értem", "uhum",
+    "rendben", "persze", "naná", "hát", "ühüm", "ööö", "öö",
+    "ühm", "hm", "hmm", "oke", "jo",
+})
+
+_STOP_WORDS = frozenset({
+    "nem", "stop", "várj", "de", "figyelj", "halló", "hé",
+    "állj", "megállj", "kérdésem",
+})
+
+
+def _normalize(text: str) -> str:
+    """Lowercase, strip, remove punctuation."""
+    import re
+    return re.sub(r"[^\w\s]", "", text.strip().lower()).strip()
+
+
+def is_backchannel(text: str) -> bool:
+    """Check if text is a backchannel acknowledgment (should be ignored)."""
+    words = _normalize(text).split()
+    if len(words) > 2:
+        return False
+    return all(w in _BACKCHANNEL_WORDS for w in words)
+
+
+def is_stop_word(text: str) -> bool:
+    """Check if text contains a stop word that should always trigger barge-in."""
+    words = _normalize(text).split()
+    return any(w in _STOP_WORDS for w in words)
+
+
 # Sentinel value to signal end of a turn's sentence chunks
 _TURN_END = "__TURN_END__"
 
@@ -61,13 +95,26 @@ class CallPipeline:
                 continue
 
             if self._state == CallState.SPEAKING:
-                # Barge-in: customer spoke while agent was speaking
-                log.info("barge_in_detected", transcript=event.text, is_interim=event.is_interim)
+                # Check if this is a backchannel ("mhm", "igen") — ignore it
+                text = event.text
+                words = _normalize(text).split()
+
+                if is_backchannel(text):
+                    log.info("backchannel_ignored", transcript=text)
+                    continue  # Agent keeps speaking
+
+                if len(words) <= 2 and not is_stop_word(text):
+                    log.info("unknown_short_ignored", transcript=text)
+                    continue  # Too short and not a stop word — likely noise
+
+                # Real barge-in: stop word or 3+ words
+                log.info("barge_in_detected", transcript=text, is_interim=event.is_interim)
                 self._tts_cancel_event.set()
                 await self.telephony.clear_audio(call_id)
                 if self.metrics:
                     self.metrics.barge_in_count += 1
                 await self._transition(CallState.LISTENING, reason="barge-in")
+                continue  # Don't process the barge-in fragment
 
             if self._state == CallState.LISTENING:
                 # New utterance — transition to PROCESSING
