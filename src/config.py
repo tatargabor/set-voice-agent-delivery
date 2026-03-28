@@ -43,11 +43,12 @@ class ResearchConfig(BaseModel):
 
 class AppSettings(BaseModel):
     """Application settings loaded from config.yaml."""
+    language: Literal["hu", "en"] = "hu"
     models: ModelsConfig = ModelsConfig()
     tts: TTSConfig = TTSConfig()
     voice: VoiceConfig = VoiceConfig()
     research: ResearchConfig = ResearchConfig()
-    projects_dir: str = "/home/tg/code2"
+    projects_dir: str = "."
 
 
 _settings: AppSettings | None = None

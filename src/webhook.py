@@ -16,6 +16,10 @@ from pathlib import Path
 from .config import get_settings
 from .agent import ConversationAgent, CallContext
 from .caller_lookup import lookup_caller
+from .i18n import (
+    _DEFAULT_PURPOSE_OUTBOUND, _DEFAULT_PURPOSE_INBOUND, _UNKNOWN_CUSTOMER,
+    _PROJECT_LABEL, get_text,
+)
 from .metrics import CallMetrics, mask_phone
 from .pipeline import CallPipeline
 from .project_context import load_project_context
@@ -248,9 +252,12 @@ async def twilio_voice(request: Request):
 
     if _inbound_mode and _inbound_busy:
         # Reject concurrent calls
-        twiml = """<?xml version="1.0" encoding="UTF-8"?>
+        from .i18n import _BUSY_MESSAGE, _BUSY_LANGUAGE, get_text
+        busy_msg = get_text(_BUSY_MESSAGE)
+        busy_lang = get_text(_BUSY_LANGUAGE)
+        twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say language="hu-HU">Jelenleg foglalt vagyok, kérem hívjon később.</Say>
+    <Say language="{busy_lang}">{busy_msg}</Say>
     <Hangup/>
 </Response>"""
         log.info("call_rejected_busy")
@@ -323,7 +330,8 @@ async def twilio_media_stream(ws: WebSocket):
             project_context_str = pc.to_prompt_section()
             # Prepend project name so the agent knows which project is selected
             if project_id:
-                project_context_str = f"Kiválasztott projekt: {project_id}\n\n{project_context_str}"
+                label = get_text(_PROJECT_LABEL)
+                project_context_str = f"{label}: {project_id}\n\n{project_context_str}"
             log.info("project_context_loaded", project=project_id, chars=len(project_context_str))
 
         outbound_phone = inbound_info.get("outbound_phone", "")
@@ -332,7 +340,7 @@ async def twilio_media_stream(ws: WebSocket):
         ctx = CallContext(
             customer_name=customer.get("customer_name", ""),
             company_name=customer.get("company_name", "WebBuilder Kft."),
-            purpose=customer.get("purpose", "elkészült a projektje és szeretnénk ha megnézné") if is_outbound else f"Bejövő hívás — {customer.get('customer_name', 'ismeretlen')} kérdése",
+            purpose=customer.get("purpose", get_text(_DEFAULT_PURPOSE_OUTBOUND)) if is_outbound else get_text(_DEFAULT_PURPOSE_INBOUND).format(name=customer.get("customer_name", get_text(_UNKNOWN_CUSTOMER))),
             website_url=customer.get("website_url"),
             project_context=project_context_str,
             project_dir=project_dir,
@@ -347,7 +355,7 @@ async def twilio_media_stream(ws: WebSocket):
         metrics = CallMetrics(
             call_id=call_sid,
             timestamp_start=datetime.now(),
-            customer_name=customer.get("customer_name", "ismeretlen"),
+            customer_name=customer.get("customer_name", get_text(_UNKNOWN_CUSTOMER)),
             script_name=customer.get("script", "inbound"),
             phone_masked=mask_phone(caller_phone),
             research_mode=get_settings().research.mode,

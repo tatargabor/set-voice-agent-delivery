@@ -108,7 +108,7 @@ def calculate_costs(metrics: CallMetrics) -> dict:
 
 ### 6. PII masking
 
-Phone numbers: `+36203911669` → `+3620***1669` (keep country code + first 2 + last 4).
+Phone numbers: `+36XXXXXXXXX` → `+3620***1669` (keep country code + first 2 + last 4).
 
 Transcript is NOT masked (needed for quality review). The `logs/` directory is already gitignored and should be access-controlled in production.
 

@@ -68,7 +68,7 @@ class CallMetrics:
 def mask_phone(phone: str) -> str:
     """Mask a phone number for PII protection.
 
-    +36203911669 → +3620***1669
+    +36XXXXXXXXX → +3620***1669
     Keep country code + first 2 subscriber digits + last 4.
     """
     if len(phone) < 8:

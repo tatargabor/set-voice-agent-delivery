@@ -1,0 +1,16 @@
+# Customer contacts — maps phone numbers to customer data.
+# Copy to contacts.yaml and fill in your details.
+# contacts.yaml is gitignored — never commit real customer data.
+
+contacts:
+  "+36201234567":
+    customer_name: "Példa Péter"
+    company_name: "AcmeCorp Kft."
+    script: "website_followup"
+    website_url: "https://example.hu"
+    project_dir: "/path/to/customer/project"  # local path to project repo
+
+default:
+  customer_name: ""
+  company_name: "YourCompany"
+  script: "website_followup"

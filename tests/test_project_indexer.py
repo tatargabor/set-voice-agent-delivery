@@ -77,7 +77,9 @@ class TestTruncateContent:
 class TestCache:
     def test_write_and_read(self, tmp_path, mock_project):
         summary = {"project_name": "test", "description": "Test project"}
-        mtimes = {"README.md": mock_project.joinpath("README.md").stat().st_mtime}
+        # Include all source files so cache doesn't see "new files"
+        files = _collect_source_files(mock_project)
+        mtimes = {rel: (mock_project / rel).stat().st_mtime for rel in files}
 
         with patch("src.project_indexer.INDEXES_DIR", tmp_path):
             write_cache("test-proj", summary, mtimes, "claude-haiku-4-5")

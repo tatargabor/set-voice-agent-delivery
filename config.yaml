@@ -1,6 +1,8 @@
 # Voice Agent Configuration
 # API keys stay in .env (never committed) — this file is for app settings only.
 
+language: hu                      # hu | en — agent language for prompts, STT, TTS
+
 models:
   fast: claude-haiku-4-5        # Fast ack layer
   deep: claude-sonnet-4-6       # Deep response + tool_use (Opus too slow for realtime)
@@ -27,4 +29,4 @@ research:
   agent_max_iterations: 3       # Local agent max tool rounds
   tool_timeout_sec: 15          # tool_use loop total timeout
 
-projects_dir: /home/tg/code2    # Where to discover customer projects
+projects_dir: .                 # Where to discover customer projects

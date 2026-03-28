@@ -29,27 +29,20 @@ async def generate_call_summary(
     if not transcript:
         return {}
 
+    from .i18n import _SUMMARY_PROMPT, _ROLE_LABELS, get_text
+
     # Format transcript for Claude
+    role_labels = get_text(_ROLE_LABELS)
     lines = []
     for msg in transcript:
-        role = "Agent" if msg["role"] == "assistant" else "Ügyfél"
+        role = role_labels["agent"] if msg["role"] == "assistant" else role_labels["customer"]
         lines.append(f"{role}: {msg['content']}")
     transcript_text = "\n".join(lines)
 
     client = AsyncAnthropic()
     response = await client.messages.create(
         model="claude-haiku-4-5",
-        system=(
-            "Egy telefonhívás átiratát kapod. Az ügyfél a projektjéről beszélt a fejlesztő céggel. "
-            "Készíts rövid, strukturált összefoglalót a fejlesztő csapat számára. "
-            "Válaszolj JSON formátumban, az alábbi mezőkkel:\n"
-            '- "modification_requests": lista a módosítási/javítási kérésekről (string lista)\n'
-            '- "questions": lista a feltett kérdésekről amiket meg kell válaszolni (string lista)\n'
-            '- "sentiment": az ügyfél hangulata: "elégedett", "semleges", "elégedetlen"\n'
-            '- "summary": 1-2 mondatos összefoglaló a hívásról\n'
-            '- "priority": "alacsony", "közepes", "magas" (ha sürgős kérés volt)\n'
-            "Ha nincs módosítási kérés vagy kérdés, adj üres listát. Csak JSON-t adj vissza, semmi mást."
-        ),
+        system=get_text(_SUMMARY_PROMPT),
         messages=[{"role": "user", "content": transcript_text}],
         max_tokens=500,
     )

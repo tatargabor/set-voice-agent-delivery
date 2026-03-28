@@ -30,6 +30,8 @@ class SonioxSTTProvider(STTProvider):
         self._interim_enabled = settings.voice.interim_enabled
         self._interim_min_words = settings.voice.interim_min_words
         self._interim_silence_ms = settings.voice.interim_silence_ms
+        from ..i18n import _STT_LANGUAGE_HINTS, get_text
+        self._language_hints = get_text(_STT_LANGUAGE_HINTS)
         self._client: AsyncSonioxClient | None = None
         self._session = None
 
@@ -41,7 +43,7 @@ class SonioxSTTProvider(STTProvider):
             audio_format="mulaw",
             sample_rate=self._sample_rate,
             num_channels=1,
-            language_hints=["hu"],
+            language_hints=self._language_hints,
             language_hints_strict=True,
             enable_endpoint_detection=True,
             max_endpoint_delay_ms=self._endpoint_delay_ms,

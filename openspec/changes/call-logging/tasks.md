@@ -1,7 +1,7 @@
 ## 1. CallMetrics dataclass
 
 - [x] 1.1 Create `src/metrics.py` — `CallMetrics` dataclass with all fields (claude tokens, tts chars, stt audio ms, twilio price, response times, barge-in count, errors)
-- [x] 1.2 Add `mask_phone()` helper function (+36203911669 → +3620***1669)
+- [x] 1.2 Add `mask_phone()` helper function (+36XXXXXXXXX → +3620***1669)
 - [x] 1.3 Add `calculate_costs(metrics)` function returning per-provider cost dict
 - [x] 1.4 Add unit tests for CallMetrics, mask_phone, and calculate_costs
 

@@ -14,22 +14,14 @@ log = structlog.get_logger()
 
 # --- Backchannel filter ---
 
-_BACKCHANNEL_WORDS = frozenset({
-    "mhm", "aha", "igen", "ja", "jó", "oké", "értem", "uhum",
-    "rendben", "persze", "naná", "hát", "ühüm", "ööö", "öö",
-    "ühm", "hm", "hmm", "oke", "jo",
-})
+import re as _re
 
-_STOP_WORDS = frozenset({
-    "nem", "stop", "várj", "de", "figyelj", "halló", "hé",
-    "állj", "megállj", "kérdésem",
-})
+from .i18n import _BACKCHANNEL_WORDS, _STOP_WORDS, get_text
 
 
 def _normalize(text: str) -> str:
     """Lowercase, strip, remove punctuation."""
-    import re
-    return re.sub(r"[^\w\s]", "", text.strip().lower()).strip()
+    return _re.sub(r"[^\w\s]", "", text.strip().lower()).strip()
 
 
 def is_backchannel(text: str) -> bool:
@@ -37,13 +29,15 @@ def is_backchannel(text: str) -> bool:
     words = _normalize(text).split()
     if len(words) > 2:
         return False
-    return all(w in _BACKCHANNEL_WORDS for w in words)
+    bc_words = get_text(_BACKCHANNEL_WORDS)
+    return all(w in bc_words for w in words)
 
 
 def is_stop_word(text: str) -> bool:
     """Check if text contains a stop word that should always trigger barge-in."""
     words = _normalize(text).split()
-    return any(w in _STOP_WORDS for w in words)
+    sw = get_text(_STOP_WORDS)
+    return any(w in sw for w in words)
 
 
 # Sentinel value to signal end of a turn's sentence chunks

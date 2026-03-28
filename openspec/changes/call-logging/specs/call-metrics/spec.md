@@ -53,5 +53,5 @@ The system SHALL calculate costs for each provider from collected metrics using 
 The system SHALL mask phone numbers before writing to logs. Format: keep country code + first 2 digits + last 4, mask middle with `***`.
 
 #### Scenario: Phone number masking
-- **WHEN** `+36203911669` is masked
+- **WHEN** `+36XXXXXXXXX` is masked
 - **THEN** the result SHALL be `+3620***1669`

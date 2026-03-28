@@ -1,6 +1,6 @@
 ## Context
 
-The outbound call system starts a webhook server per call, places the call, runs the pipeline, then shuts down. For inbound, the server must run **permanently** — any call can arrive at any time. The Twilio number (+36203911669) is already set up; we just need to configure its incoming call webhook URL.
+The outbound call system starts a webhook server per call, places the call, runs the pipeline, then shuts down. For inbound, the server must run **permanently** — any call can arrive at any time. The Twilio number (+36XXXXXXXXX) is already set up; we just need to configure its incoming call webhook URL.
 
 ## Goals / Non-Goals
 
@@ -44,7 +44,7 @@ default:
 ### 2. Inbound webhook flow
 
 ```
-Ügyfél hív +36203911669
+Ügyfél hív +36XXXXXXXXX
        │
        ▼
 Twilio POST /twilio/voice

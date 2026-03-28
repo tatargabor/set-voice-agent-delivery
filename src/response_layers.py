@@ -15,27 +15,23 @@ from .local_agent import research
 
 log = structlog.get_logger()
 
-# Simple messages that don't need a fast ack
-_SIMPLE_PATTERNS = {"igen", "nem", "szia", "helló", "halló", "ok", "oké", "jó", "köszönöm", "köszi", "meg", "megkaptam"}
-
-
-_RESEARCH_KEYWORDS = {
-    "fájl", "kód", "spec", "change", "design", "keress", "nézd meg",
-    "mi van a", "hogyan van implementálva", "forráskód", "openspec",
-    "implementáció", "melyik fájl", "hol van", "mutasd meg",
-}
+from .i18n import (
+    _SIMPLE_PATTERNS, _RESEARCH_KEYWORDS, _FAST_ACK, _THINKING_MESSAGES,
+    _RESEARCH_PREFIX, get_text,
+)
 
 
 def _is_research_question(text: str) -> bool:
     """Check if the question likely needs deep project research."""
     lower = text.strip().lower()
-    return any(kw in lower for kw in _RESEARCH_KEYWORDS)
+    keywords = get_text(_RESEARCH_KEYWORDS)
+    return any(kw in lower for kw in keywords)
 
 
 def _is_simple(text: str) -> bool:
     """Check if customer message is too simple to warrant a fast ack."""
     words = text.strip().lower().rstrip(".!?,")
-    return len(words) < 15 or words in _SIMPLE_PATTERNS
+    return len(words) < 15 or words in get_text(_SIMPLE_PATTERNS)
 
 
 class ResponseLayers:
@@ -62,7 +58,7 @@ class ResponseLayers:
         """Generate immediate acknowledgment via Haiku."""
         response = await self.client.messages.create(
             model=self.fast_model,
-            system=f"Röviden nyugtázd amit az ügyfél mondott. Max 5 szó. Magyarul. Ne ígérj semmit, csak nyugtázd. Ne használj emojikat vagy markdown formázást — ez telefonon lesz felolvasva. Cég: {company_name}.",
+            system=get_text(_FAST_ACK).format(company_name=company_name),
             messages=[{"role": "user", "content": customer_text}],
             max_tokens=30,
         )
@@ -243,7 +239,7 @@ class ResponseLayers:
         # For research questions: skip fast ack (it would say something dumb
         # before tools run), just say "utánanézek" and go straight to tool_use
         if is_research and has_project:
-            yield "Utánanézek!"
+            yield get_text(_RESEARCH_PREFIX)
 
             pdir = Path(ctx.project_dir)
             use_agent = mode == "local_agent" or mode == "auto"
@@ -252,7 +248,7 @@ class ResponseLayers:
             else:
                 sentences = await self._deep_response_with_tools(ctx, system_prompt, pdir)
 
-            full_parts = ["Utánanézek!"] + sentences
+            full_parts = [get_text(_RESEARCH_PREFIX)] + sentences
             for sentence in sentences:
                 yield sentence
             ctx.history.append({"role": "assistant", "content": " ".join(full_parts).strip()})
@@ -291,7 +287,7 @@ class ResponseLayers:
             try:
                 await asyncio.wait_for(deep_done.wait(), timeout=3.0)
             except asyncio.TimeoutError:
-                yield "Egy pillanat, mindjárt mondom."
+                yield get_text(_THINKING_MESSAGES)[0]
                 # Now just wait for it to finish, no more thinking messages
                 await deep_done.wait()
 
