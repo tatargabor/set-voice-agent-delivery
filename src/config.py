@@ -44,6 +44,7 @@ class ResearchConfig(BaseModel):
 class AppSettings(BaseModel):
     """Application settings loaded from config.yaml."""
     language: Literal["hu", "en"] = "hu"
+    company_name: str = "WebBuilder Kft."
     models: ModelsConfig = ModelsConfig()
     tts: TTSConfig = TTSConfig()
     voice: VoiceConfig = VoiceConfig()

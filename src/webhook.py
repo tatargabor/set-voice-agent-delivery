@@ -339,7 +339,7 @@ async def twilio_media_stream(ws: WebSocket):
 
         ctx = CallContext(
             customer_name=customer.get("customer_name", ""),
-            company_name=customer.get("company_name", "WebBuilder Kft."),
+            company_name=customer.get("company_name", get_settings().company_name),
             purpose=customer.get("purpose", get_text(_DEFAULT_PURPOSE_OUTBOUND)) if is_outbound else get_text(_DEFAULT_PURPOSE_INBOUND).format(name=customer.get("customer_name", get_text(_UNKNOWN_CUSTOMER))),
             website_url=customer.get("website_url"),
             project_context=project_context_str,

@@ -16,8 +16,8 @@ def test_sentence_boundary_question():
 
 
 def test_sentence_boundary_long_comma():
-    text = "Rendben, feljegyzem a kéréseket és továbbítom,"
-    assert len(text) > 40
+    text = "Rendben, feljegyzem a kéréseket és továbbítom a csapatnak, akik majd foglalkoznak vele és visszajeleznek,"
+    assert len(text) > 80
     assert is_sentence_boundary(text) is True
 
 

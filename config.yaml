@@ -2,6 +2,7 @@
 # API keys stay in .env (never committed) — this file is for app settings only.
 
 language: hu                      # hu | en — agent language for prompts, STT, TTS
+company_name: WebBuilder Kft.    # Company name used in greetings and prompts
 
 models:
   fast: claude-haiku-4-5        # Fast ack layer
