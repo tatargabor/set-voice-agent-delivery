@@ -268,6 +268,117 @@ _RESEARCH_PREFIX = {
     "en": "Let me check!",
 }
 
+_VOICE_FOLLOWUP = {
+    "hu": "Szeretnéd, hogy részletesebben elmondjam?",
+    "en": "Would you like me to go into more detail?",
+}
+
+_VOICE_NOT_FOUND = {
+    "hu": "Sajnos nem sikerült az információt megtalálni.",
+    "en": "Sorry, I couldn't find that information.",
+}
+
+_DNC_PHRASES = {
+    "hu": ["ne hívjatok", "ne hívjanak", "ne telefonáljatok", "ne telefonáljanak"],
+    "en": ["don't call me", "stop calling", "remove my number", "do not call"],
+}
+
+_TRANSCRIPT_LABELS = {
+    "hu": {"agent": "Agent", "customer": "Ügyfél", "cost": "Költség", "total": "ÖSSZESEN", "call_end": "Hívás vége"},
+    "en": {"agent": "Agent", "customer": "Customer", "cost": "Cost", "total": "TOTAL", "call_end": "Call ended"},
+}
+
+_AGENT_CACHE_LABELS = {
+    "hu": {"files": "Fájlok", "specs": "Specifikációk", "changes": "Change-ek", "findings": "Korábbi megállapítások"},
+    "en": {"files": "Files", "specs": "Specifications", "changes": "Changes", "findings": "Previous findings"},
+}
+
+_PROJECT_CONTEXT_LABELS = {
+    "hu": {
+        "summary": "Projekt összefoglaló",
+        "specs": "Specifikációk (openspec)",
+        "active": "Aktív munkák",
+        "docs": "Dokumentáció (docs/)",
+        "previous_call": "Előző hívás",
+        "last_call": "Utolsó hívás",
+    },
+    "en": {
+        "summary": "Project summary",
+        "specs": "Specifications (openspec)",
+        "active": "Active work",
+        "docs": "Documentation (docs/)",
+        "previous_call": "Previous call",
+        "last_call": "Last call",
+    },
+}
+
+_TOOL_DESCRIPTIONS = {
+    "hu": {
+        "openspec_read": "ELSŐDLEGES FORRÁS — Az openspec specifikáció olvasása. Mindig ELŐSZÖR ezt használd! Tartalmazza a projekt követelményeit, terveket, állapotot. Spec vagy change neve kell.",
+        "docs_read": "MÁSODLAGOS FORRÁS — Design dokumentáció, Figma/UI/UX leírások a docs/ mappából. Használd design kérdéseknél (színek, elrendezés, tipográfia).",
+        "design_check": "Design token keresés a design-snapshot.md-ből. Színek, méretek, komponens stílusok kereséséhez.",
+        "file_read": "CSAK HA SZÜKSÉGES — Forráskód olvasás. Csak konkrét technikai kérdésnél használd (pl. 'miért kék a gomb?'), ha az openspec és docs nem ad választ.",
+        "grep_search": "CSAK HA SZÜKSÉGES — Keresés a forráskódban. Csak ha az openspec/docs nem elég és konkrét kód kell.",
+    },
+    "en": {
+        "openspec_read": "PRIMARY SOURCE — Read openspec specifications. Always use this FIRST! Contains project requirements, plans, status. Needs spec or change name.",
+        "docs_read": "SECONDARY SOURCE — Design documentation, Figma/UI/UX descriptions from docs/ folder. Use for design questions (colors, layout, typography).",
+        "design_check": "Search design tokens from design-snapshot.md. For colors, sizes, component styles.",
+        "file_read": "ONLY IF NEEDED — Read source code. Only for specific technical questions (e.g. 'why is that button blue?'), when openspec and docs don't answer.",
+        "grep_search": "ONLY IF NEEDED — Search source code. Only when openspec/docs aren't enough and specific code is needed.",
+    },
+}
+
+_INDEXER_LABELS = {
+    "hu": {
+        "description": "1-2 mondatos leírás mit csinál a projekt",
+        "modules": "Modul neve",
+        "module_desc": "Mit csinál, milyen állapotban van",
+        "colors": "Fő színek ha vannak (pl. kék #2563EB, szürke háttér)",
+        "font": "Betűtípus ha van",
+        "style": "Általános stílus (pl. modern, minimál, corporate)",
+        "done": "Kész elemek listája",
+        "in_progress": "Folyamatban lévő munkák",
+        "planned": "Tervezett fejlesztések",
+        "previous_requests": "Korábbi ügyfélkérések ha vannak",
+        "done_label": "Kész",
+        "in_progress_label": "Folyamatban",
+        "planned_label": "Tervezett",
+        "status_label": "Állapot",
+        "prev_requests_label": "Korábbi ügyfélkérések",
+        "prev_requests_section": "Korábbi ügyfélkérések",
+        "desc_label": "Leírás",
+        "colors_label": "Színek",
+        "style_label": "Stílus",
+    },
+    "en": {
+        "description": "1-2 sentence description of what the project does",
+        "modules": "Module name",
+        "module_desc": "What it does, current status",
+        "colors": "Main colors if any (e.g. blue #2563EB, grey background)",
+        "font": "Font if any",
+        "style": "General style (e.g. modern, minimal, corporate)",
+        "done": "List of completed items",
+        "in_progress": "Work in progress",
+        "planned": "Planned features",
+        "previous_requests": "Previous customer requests if any",
+        "done_label": "Done",
+        "in_progress_label": "In progress",
+        "planned_label": "Planned",
+        "status_label": "Status",
+        "prev_requests_label": "Previous customer requests",
+        "prev_requests_section": "Previous customer requests",
+        "desc_label": "Description",
+        "colors_label": "Colors",
+        "style_label": "Style",
+    },
+}
+
+_SUMMARY_FALLBACK = {
+    "hu": {"sentiment": "semleges", "priority": "közepes"},
+    "en": {"sentiment": "neutral", "priority": "medium"},
+}
+
 
 # --- Accessor functions ---
 

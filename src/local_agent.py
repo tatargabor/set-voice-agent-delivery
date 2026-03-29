@@ -10,6 +10,7 @@ from anthropic import AsyncAnthropic
 from .agent_cache import AgentCache, get_or_create_cache
 from .agent_tools import TOOL_DEFINITIONS, execute_tool
 from .config import get_settings
+from .i18n import _RESEARCH_FALLBACK, get_text
 
 log = structlog.get_logger()
 
@@ -107,4 +108,4 @@ async def research(question: str, project_dir: Path, cache: AgentCache | None = 
     if last_text:
         cache.add_finding(f"Q: {question[:80]} → {last_text[:120]}")
         return last_text
-    return "Sajnos nem sikerült időben megtalálni az információt."
+    return get_text(_RESEARCH_FALLBACK)

@@ -17,7 +17,7 @@ log = structlog.get_logger()
 
 from .i18n import (
     _SIMPLE_PATTERNS, _RESEARCH_KEYWORDS, _FAST_ACK, _THINKING_MESSAGES,
-    _RESEARCH_PREFIX, get_text,
+    _RESEARCH_PREFIX, _VOICE_FOLLOWUP, _VOICE_NOT_FOUND, get_text,
 )
 
 
@@ -174,11 +174,11 @@ class ResponseLayers:
                 _MAX_VOICE_SENTENCES = settings.voice.max_sentences
                 if len(sentences) > _MAX_VOICE_SENTENCES:
                     sentences = sentences[:_MAX_VOICE_SENTENCES]
-                    sentences.append("Szeretnéd, hogy részletesebben elmondjam?")
+                    sentences.append(get_text(_VOICE_FOLLOWUP))
                 return sentences
 
         # Timeout fallback — return whatever text blocks we got from last response
-        return ["Sajnos nem sikerült az információt megtalálni."]
+        return [get_text(_VOICE_NOT_FOUND)]
 
     async def _deep_response_with_agent(
         self, ctx: CallContext, project_dir: Path
@@ -205,7 +205,7 @@ class ResponseLayers:
         max_s = settings.voice.max_sentences
         if len(sentences) > max_s:
             sentences = sentences[:max_s]
-            sentences.append("Szeretnéd, hogy részletesebben elmondjam?")
+            sentences.append(get_text(_VOICE_FOLLOWUP))
 
         return sentences
 

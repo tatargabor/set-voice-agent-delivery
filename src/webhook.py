@@ -104,6 +104,13 @@ def _resolve_project_dir(project_id: str) -> str | None:
     return str(fallback) if fallback.exists() else None
 
 
+@app.get("/api/config")
+async def get_config():
+    """Return language and company name for the voice widget UI."""
+    settings = get_settings()
+    return {"language": settings.language, "company_name": settings.company_name}
+
+
 @app.get("/api/projects")
 async def list_projects():
     """Discover projects from set-project list (registered projects)."""

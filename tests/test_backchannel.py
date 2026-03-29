@@ -1,6 +1,15 @@
 """Tests for backchannel filter."""
 
+import pytest
 from src.pipeline import is_backchannel, is_stop_word, _normalize
+
+
+@pytest.fixture(autouse=True)
+def _set_hungarian(monkeypatch):
+    """These tests use Hungarian word lists — force language to hu."""
+    from src import config
+    settings = config.get_settings()
+    monkeypatch.setattr(settings, "language", "hu")
 
 
 class TestNormalize:

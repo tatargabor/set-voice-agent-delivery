@@ -39,7 +39,9 @@ from . import webhook
 log = structlog.get_logger()
 
 # DNC trigger phrases
-DNC_PHRASES = ["ne hívjatok", "ne hívjanak", "ne telefonáljatok", "ne telefonáljanak"]
+from .i18n import _DNC_PHRASES, _TRANSCRIPT_LABELS, get_text
+
+DNC_PHRASES = get_text(_DNC_PHRASES)
 
 
 def parse_args():
@@ -161,18 +163,20 @@ async def run_call(args):
         # 15. Print transcript
         print("\n--- Transcript ---")
         for msg in ctx.history:
-            role = "Agent" if msg["role"] == "assistant" else "Ügyfél"
+            labels = get_text(_TRANSCRIPT_LABELS)
+            role = labels["agent"] if msg["role"] == "assistant" else labels["customer"]
             print(f"  {role}: {msg['content']}")
 
         # 16. Print cost summary
+        labels = get_text(_TRANSCRIPT_LABELS)
         costs = calculate_costs(metrics)
-        print(f"\n--- Költség ---")
+        print(f"\n--- {labels['cost']} ---")
         print(f"  Twilio:     ${costs['twilio']:.4f}")
         print(f"  Claude:     ${costs['claude']:.4f}")
         print(f"  Google TTS: ${costs['google_tts']:.6f}")
         print(f"  Soniox STT: ${costs['soniox_stt']:.6f}")
-        print(f"  ÖSSZESEN:   ${costs['total']:.4f}")
-        print(f"\n--- Hívás vége ({len(ctx.history)} üzenet, log: {filepath.name}) ---")
+        print(f"  {labels['total']}:   ${costs['total']:.4f}")
+        print(f"\n--- {labels['call_end']} ({len(ctx.history)} msg, log: {filepath.name}) ---")
 
     finally:
         pass  # STT/TTS disconnect handled by pipeline.run()

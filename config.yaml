@@ -1,33 +1,33 @@
 # Voice Agent Configuration
 # API keys stay in .env (never committed) — this file is for app settings only.
 
-language: hu                      # hu | en — agent language for prompts, STT, TTS
-company_name: WebBuilder Kft.    # Company name used in greetings and prompts
+language: en # hu | en — agent language for prompts, STT, TTS
+company_name: WebBuilder Ltd. # Company name used in greetings and prompts
 
 models:
-  fast: claude-haiku-4-5        # Fast ack layer
-  deep: claude-sonnet-4-6       # Deep response + tool_use (Opus too slow for realtime)
-  agent: claude-sonnet-4-6      # Local agent research
+  fast: claude-haiku-4-5 # Fast ack layer
+  deep: claude-sonnet-4-6 # Deep response + tool_use (Opus too slow for realtime)
+  agent: claude-sonnet-4-6 # Local agent research
 
 tts:
-  voice_name: hu-HU-Chirp3-HD-Achernar  # hu-HU-Wavenet-B | hu-HU-Chirp3-HD-* (30 hang)
-  language_code: hu-HU
+  voice_name: en-US-Chirp3-HD-Achernar # en-US-Chirp3-HD-* | en-US-Wavenet-*
+  language_code: en-US
   sample_rate: 8000
 
 voice:
-  max_sentences: 6              # Max sentences per response (agent decides actual length)
-  max_tokens_tool_use: 300      # Deep layer with tool_use
-  max_tokens_agent: 200         # Local agent response
-  max_tokens_stream: 500        # Streaming (no tools)
-  endpoint_delay_ms: 800        # Soniox silence detection threshold (was 1200)
-  interim_enabled: false        # Speculative transcript processing (debugging)
-  interim_min_words: 3          # Min words before interim fires
-  interim_silence_ms: 500       # Silence gap to trigger interim (ms)
+  max_sentences: 6 # Max sentences per response (agent decides actual length)
+  max_tokens_tool_use: 300 # Deep layer with tool_use
+  max_tokens_agent: 200 # Local agent response
+  max_tokens_stream: 500 # Streaming (no tools)
+  endpoint_delay_ms: 800 # Soniox silence detection threshold (was 1200)
+  interim_enabled: false # Speculative transcript processing (debugging)
+  interim_min_words: 3 # Min words before interim fires
+  interim_silence_ms: 500 # Silence gap to trigger interim (ms)
 
 research:
-  mode: auto                    # tool_use | local_agent | auto
-  agent_timeout_sec: 10         # Local agent total timeout
-  agent_max_iterations: 3       # Local agent max tool rounds
-  tool_timeout_sec: 15          # tool_use loop total timeout
+  mode: auto # tool_use | local_agent | auto
+  agent_timeout_sec: 10 # Local agent total timeout
+  agent_max_iterations: 3 # Local agent max tool rounds
+  tool_timeout_sec: 15 # tool_use loop total timeout
 
-projects_dir: .                 # Where to discover customer projects
+projects_dir: . # Where to discover customer projects

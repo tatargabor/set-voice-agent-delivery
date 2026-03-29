@@ -5,6 +5,8 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .i18n import _PROJECT_CONTEXT_LABELS, get_text
+
 MAX_CONTEXT_CHARS = 12000
 
 
@@ -20,23 +22,24 @@ class ProjectContext:
 
     def to_prompt_section(self) -> str:
         """Format as a section for the Claude system prompt."""
+        labels = get_text(_PROJECT_CONTEXT_LABELS)
         parts = []
         if self.project_summary:
-            parts.append(f"Projekt összefoglaló:\n{self.project_summary}")
+            parts.append(f"{labels['summary']}:\n{self.project_summary}")
         if self.specs_summary:
-            parts.append(f"Specifikációk (openspec):\n{self.specs_summary}")
+            parts.append(f"{labels['specs']}:\n{self.specs_summary}")
         if self.active_changes:
-            parts.append(f"Aktív munkák:\n{self.active_changes}")
+            parts.append(f"{labels['active']}:\n{self.active_changes}")
         if self.docs_content:
-            parts.append(f"Dokumentáció (docs/):\n{self.docs_content}")
+            parts.append(f"{labels['docs']}:\n{self.docs_content}")
         if self.design_tokens:
             parts.append(f"Design:\n{self.design_tokens}")
         if self.previous_call:
-            parts.append(f"Előző hívás:\n{self.previous_call}")
+            parts.append(f"{labels['previous_call']}:\n{self.previous_call}")
 
         text = "\n\n".join(parts)
         if len(text) > MAX_CONTEXT_CHARS:
-            text = text[:MAX_CONTEXT_CHARS] + "\n[...csonkolva]"
+            text = text[:MAX_CONTEXT_CHARS] + "\n[...truncated]"
         return text
 
 
@@ -189,6 +192,7 @@ def _load_previous_call(
                 data = json.loads(matching[0].read_text())
                 turns = data.get("transcript", [])
                 lines = [f"  {t['role']}: {t['text'][:60]}" for t in turns[:6]]
-                ctx.previous_call = f"Utolsó hívás ({data.get('timestamp_start', '?')[:10]}):\n" + "\n".join(lines)
+                labels = get_text(_PROJECT_CONTEXT_LABELS)
+                ctx.previous_call = f"{labels['last_call']} ({data.get('timestamp_start', '?')[:10]}):\n" + "\n".join(lines)
             except Exception:
                 pass

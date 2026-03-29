@@ -4,72 +4,106 @@
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776ab.svg)](https://python.org)
 [![Platform: Linux / macOS](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS-lightgrey.svg)]()
 
-AI-powered voice agent for real-time phone conversations. Combines **Soniox STT** (speech-to-text), **Claude** (conversation engine), **Google Cloud TTS** (text-to-speech), and **Twilio** (telephony/WebRTC) into a low-latency voice pipeline.
+**A real-time AI voice agent that answers phone calls and talks to your customers — built with Claude, streamed speech-to-text, and sub-second response latency.**
 
-Built as a [set-core](https://github.com/tatargabor/set-core) consumer project — developed and orchestrated using OpenSpec-driven parallel agents.
+---
+
+## The Story
+
+We needed an AI agent that could pick up the phone and have a real conversation with customers — in Hungarian. Not a chatbot with a voice skin, but something that feels like talking to a knowledgeable colleague who knows your project inside out.
+
+The problem with most voice AI is latency. You say something, wait three seconds, then hear a robotic answer. That's not a conversation — it's an interrogation. So we built a pipeline that starts speaking before the full response is ready, acknowledges you immediately with a fast model while a deeper model thinks, and handles interruptions naturally.
+
+The result: **under one second from the moment you stop speaking to the moment the agent starts talking back.**
+
+This project was built entirely using [set-core](https://github.com/ASetCoding/set-core) — an orchestration framework for Claude Code that manages parallel AI agents, structured specifications, and integration gates. Every feature started as an OpenSpec change, was decomposed into tasks, implemented by agents in parallel worktrees, and merged through automated quality gates. The development process itself is a showcase of what set-core enables: a complex real-time system, built incrementally, with each piece verified before merging.
+
+---
 
 ## How It Works
 
 ```
-Browser (WebRTC) / Phone
-    |
-    v
-Twilio (Media Streams WebSocket)
-    |
-    v
-+-------------------------------+
-|  FastAPI server (port 8765)   |
-|  +-- /twilio/voice   (TwiML)  |
-|  +-- /twilio/token   (JWT)    |
-|  +-- /twilio/media-stream      |
-|  +-- /api/projects             |
-|  +-- /api/call (outbound)      |
-+---------------+---------------+
-                |
-                v
-+-------------------------------+
-|  CallPipeline                 |
-|  +-- STT loop  (Soniox)      |
-|  +-- LLM loop  (Claude)      |
-|  |   +-- Fast ack  (Haiku)   |
-|  |   +-- Deep      (Sonnet)  |
-|  |       +-- tool_use         |
-|  |       +-- local agent      |
-|  +-- TTS loop  (Google)      |
-+-------------------------------+
+Browser (WebRTC) or Phone
+         |
+         v
+   Twilio Media Streams (WebSocket)
+         |
+         v
++-----------------------------------+
+|  FastAPI Server (port 8765)       |
+|                                   |
+|  /twilio/voice     — TwiML        |
+|  /twilio/token     — JWT (WebRTC) |
+|  /twilio/media-stream — WebSocket |
+|  /api/projects     — project list |
+|  /api/call         — outbound     |
+|  /static/          — voice widget |
++----------------+------------------+
+                 |
+                 v
++-----------------------------------+
+|  CallPipeline (3 async loops)     |
+|                                   |
+|  STT Loop ──► Soniox (streaming)  |
+|       |                           |
+|  LLM Loop ──► Claude              |
+|       |       ├─ Fast (Haiku)     |
+|       |       └─ Deep (Sonnet)    |
+|       |           ├─ tool_use     |
+|       |           └─ local agent  |
+|       |                           |
+|  TTS Loop ──► Google Cloud TTS    |
++-----------------------------------+
 ```
 
-**Pipeline stages:**
+### The Two-Layer Response System
 
-1. **Soniox STT** — real-time Hungarian speech recognition via WebSocket streaming. Configurable silence detection threshold for natural turn-taking.
-2. **Claude conversation engine** — two-layer response system:
-   - *Fast ack* (Haiku) — immediate acknowledgment while the deep layer thinks
-   - *Deep response* (Sonnet) — full conversational reply with optional tool use or local agent research
-3. **Google Cloud TTS** — Hungarian text-to-speech with Chirp3 HD voices. Audio streamed back as mulaw/8000 for Twilio compatibility.
-4. **Twilio** — handles telephony (inbound/outbound calls) and browser-based WebRTC connections.
+This is the core innovation. When a customer speaks, two things happen simultaneously:
+
+1. **Fast layer (Haiku, ~200ms)** — generates an immediate acknowledgment: *"I understand, let me look into that."* This gets synthesized and played back instantly so the customer knows they were heard.
+
+2. **Deep layer (Sonnet)** — works on the real answer. It can call tools, search project files, or spin up a local research agent. When it's ready, it seamlessly takes over from the fast layer.
+
+The customer never waits in silence. They hear a natural conversational flow while the heavy thinking happens in the background.
+
+### Barge-In & Turn-Taking
+
+If the customer starts speaking while the agent is talking, the agent stops immediately. The STT captures what the customer said, the pipeline cancels any queued audio, and a new response cycle begins. This mirrors how real conversations work — you can interrupt, and the other person adjusts.
+
+---
 
 ## Features
 
-- **Real-time voice conversations** with sub-second latency
-- **Browser widget** for in-browser calls (WebRTC via Twilio Client SDK)
-- **Outbound calls** to any phone number via Twilio
-- **Inbound call handling** with configurable project routing
-- **Multi-project support** — each project gets its own system prompt, knowledge base, and call scripts
-- **Research modes** — `tool_use` (API tool calls), `local_agent` (autonomous research loop), or `auto` (smart routing)
-- **Call logging** — full transcripts, cost breakdown, tool calls, and latency metrics per call
-- **Configurable models** — swap Claude models per layer (fast/deep/agent) in `config.yaml`
+- **Sub-second voice latency** — fast ack + streaming TTS means the agent responds almost immediately
+- **Browser voice widget** — click a button and talk via WebRTC, no phone needed
+- **Inbound & outbound calls** — receive calls on your Twilio number or dial out to any phone
+- **Multi-project support** — each customer project gets its own knowledge base, system prompt, and call scripts
+- **Research modes** — the agent can use API tool calls, spawn a local research agent, or auto-route between them
+- **Call logging** — every call produces a JSON log with full transcript, per-turn latency, token usage, cost breakdown, and tool calls
+- **Call summaries** — post-call Claude Haiku analysis extracts action items, questions, and customer sentiment
+- **Prompt caching** — Anthropic prompt caching on deep responses reduces cost and latency on repeated context
+- **Backchannel filtering** — ignores filler words ("mhm", "igen") during agent speech to prevent false barge-ins
+- **Configurable everything** — swap models, voices, silence thresholds, research modes, and response lengths in `config.yaml`
 
-## Installation
+---
 
-**Prerequisites:** Python 3.11+, [ngrok](https://ngrok.com/), API keys for Anthropic, Soniox, Google Cloud TTS, and Twilio.
+## Getting Started
+
+### Prerequisites
+
+- **Python 3.11+**
+- **ngrok** — tunnels your local server to the internet so Twilio can reach it ([download](https://ngrok.com/download))
+- API keys for: **Anthropic** (Claude), **Soniox** (STT), **Google Cloud** (TTS), **Twilio** (telephony)
+
+### 1. Clone & Install
 
 ```bash
-git clone https://github.com/tatargabor/set-voice-agent-delivery.git
+git clone https://github.com/ASetCoding/set-voice-agent-delivery.git
 cd set-voice-agent-delivery
 pip install -e ".[dev]"
 ```
 
-### API Keys
+### 2. Configure API Keys
 
 Create a `.env` file in the project root:
 
@@ -81,102 +115,158 @@ ANTHROPIC_API_KEY=sk-ant-...
 SONIOX_API_KEY=...
 
 # Google Cloud (TTS) — https://console.cloud.google.com/
-GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+# Enable the Text-to-Speech API, create a service account, download the JSON key
+GOOGLE_APPLICATION_CREDENTIALS=/absolute/path/to/service-account.json
 
 # Twilio (telephony) — https://console.twilio.com/
 TWILIO_ACCOUNT_SID=AC...
 TWILIO_AUTH_TOKEN=...
 TWILIO_PHONE_NUMBER=+1...
 
-# Twilio browser client (WebRTC widget)
+# For the browser voice widget (WebRTC):
+# Twilio Console → API Keys → Create API Key
+# Twilio Console → TwiML Apps → Create TwiML App
 TWILIO_API_KEY_SID=SK...
 TWILIO_API_KEY_SECRET=...
 TWILIO_TWIML_APP_SID=AP...
 ```
 
-| Service | Console | What you need |
+| Service | Console | What You Need |
 |---------|---------|---------------|
 | **Anthropic** | [console.anthropic.com](https://console.anthropic.com/) | API key |
-| **Soniox** | [soniox.com](https://soniox.com/) | Register, Dashboard, API Key |
-| **Google Cloud** | [console.cloud.google.com](https://console.cloud.google.com/) | Project + Text-to-Speech API enabled + Service Account key (JSON) |
-| **Twilio** | [console.twilio.com](https://console.twilio.com/) | Account SID + Auth Token + phone number. For WebRTC: API Key + TwiML App |
+| **Soniox** | [soniox.com](https://soniox.com/) | Account + API key |
+| **Google Cloud** | [console.cloud.google.com](https://console.cloud.google.com/) | Project with Text-to-Speech API enabled + service account JSON key |
+| **Twilio** | [console.twilio.com](https://console.twilio.com/) | Account SID, Auth Token, phone number. For WebRTC: API Key + TwiML App |
 
-## Quick Start
+### 3. Start the Services
+
+You need three things running: the **Python server**, an **ngrok tunnel**, and your **environment loaded**.
+
+**Terminal 1 — ngrok tunnel:**
 
 ```bash
-# 1. Start ngrok tunnel
 ngrok http 8765
-
-# 2. Set the ngrok URL in Twilio Console:
-#    Voice -> TwiML Apps -> Voice Request URL: https://<ngrok-url>/twilio/voice
-
-# 3. Start the server
-set -a && source .env && set +a && python -c "
-from src.webhook import app, enable_inbound_mode
-enable_inbound_mode()
-import uvicorn
-uvicorn.run(app, host='0.0.0.0', port=8765)
-"
 ```
 
-Open the voice widget in your browser: `https://<ngrok-url>/static/voice-widget.html`
+Copy the `https://...ngrok-free.dev` URL from the output.
 
-1. Select a project from the dropdown
-2. (Optional) Enter your name for caller identification
-3. Click the microphone button to start a browser call
-4. Click the phone button to place an outbound call to a number
+**Terminal 2 — voice agent server:**
+
+```bash
+# Load environment variables and start the server
+set -a && source .env && set +a
+python -m src.inbound_server --port 8765
+```
+
+You should see:
+
+```
+=== Inbound Voice Agent Server ===
+Listening on port 8765
+```
+
+### 4. Configure Twilio
+
+**For the browser widget (WebRTC):**
+
+1. Go to [Twilio Console → TwiML Apps](https://console.twilio.com/us1/develop/voice/manage/twiml-apps)
+2. Open your TwiML App (or create one)
+3. Set **Voice Request URL** to: `https://<your-ngrok-url>/twilio/voice`
+4. Save
+
+**For inbound phone calls:**
+
+1. Go to [Twilio Console → Phone Numbers](https://console.twilio.com/us1/develop/phone-numbers/manage/incoming)
+2. Click your phone number
+3. Under **Voice**, set **"A Call Comes In"** webhook to: `https://<your-ngrok-url>/twilio/voice`
+4. Save
+
+### 5. Make a Call
+
+**From browser:** Open `https://<your-ngrok-url>/static/voice-widget.html`
+- Select a project from the dropdown
+- Click the microphone button to start talking
+
+**From phone:** Call your Twilio phone number — the agent will answer.
+
+**Outbound call:**
+```bash
+set -a && source .env && set +a
+python -m src --phone "+1234567890" --script call_scripts/website_followup.yaml
+```
+
+---
 
 ## Configuration
 
-Application settings live in `config.yaml` (API keys stay in `.env`):
+All application settings live in `config.yaml` — API keys stay in `.env`:
 
 ```yaml
+language: hu                       # hu | en
+company_name: Your Company Ltd.    # Used in greetings
+
 models:
-  fast: claude-haiku-4-5        # Fast acknowledgment layer
-  deep: claude-sonnet-4-6       # Deep response + tool use
-  agent: claude-sonnet-4-6      # Local agent research
+  fast: claude-haiku-4-5           # Fast acknowledgment layer (~200ms)
+  deep: claude-sonnet-4-6          # Deep response + tool use (~1-3s)
+  agent: claude-sonnet-4-6         # Local agent research
 
 tts:
-  voice_name: hu-HU-Chirp3-HD-Achernar
+  voice_name: hu-HU-Chirp3-HD-Achernar  # Google TTS voice
   language_code: hu-HU
   sample_rate: 8000
 
 voice:
-  max_sentences: 6              # Max sentences per response
-  endpoint_delay_ms: 800        # Silence detection threshold (ms)
+  max_sentences: 6                 # Max sentences per response
+  endpoint_delay_ms: 800           # Silence threshold for turn-taking (ms)
 
 research:
-  mode: auto                    # tool_use | local_agent | auto
+  mode: auto                       # tool_use | local_agent | auto
   agent_timeout_sec: 10
   agent_max_iterations: 3
 ```
 
 ### Research Modes
 
-| Mode | Best for | Description |
-|------|----------|-------------|
-| `tool_use` | Simple lookups | Claude API tool_use loop — each tool call is an API roundtrip |
-| `local_agent` | Deep research | Local agent with its own tool loop, fewer API calls |
-| `auto` | General use (default) | Routes research questions to agent, simple questions to tool_use |
+| Mode | Best For | How It Works |
+|------|----------|--------------|
+| `tool_use` | Simple lookups | Claude's built-in tool calling — each tool is an API roundtrip |
+| `local_agent` | Deep research | Spawns a local agent with its own tool loop, fewer API calls, more autonomy |
+| `auto` | General use (default) | Routes research questions to the local agent, simple questions to tool_use |
+
+### Adding Your Own Projects
+
+Create a YAML file in your projects directory with project details, documentation links, and knowledge base. The agent will use this context when talking to customers about that specific project. See existing files in the repo for examples.
+
+---
 
 ## Cost
 
-| Channel | Estimated cost per call |
-|---------|------------------------|
-| Browser (WebRTC) | ~$0.02 -- $0.08 |
-| Outbound phone | ~$0.10 -- $0.15 |
+| Channel | Estimated Cost Per Call (~1 min) |
+|---------|----------------------------------|
+| Browser (WebRTC) | ~$0.02 — $0.08 |
+| Outbound phone | ~$0.10 — $0.15 |
 
-Costs include STT, LLM tokens, TTS, and Twilio minutes.
+Breakdown: Soniox STT + Claude tokens (Haiku + Sonnet) + Google TTS + Twilio minutes. Prompt caching reduces repeat-context costs significantly.
+
+---
 
 ## Call Logs
 
-Every call is logged to `logs/calls/YYYY-MM-DD/`:
+Every call is automatically logged to `logs/calls/YYYY-MM-DD/`:
 
 ```
 logs/calls/2026-03-28/20260328_143022_customer.json
 ```
 
-Each log contains: full transcript, per-turn latency, token usage, cost breakdown, tool calls, and research results.
+Each log contains:
+- Full transcript (customer + agent turns)
+- Per-turn latency measurements
+- Token usage per Claude call
+- Cost breakdown by service
+- Tool calls and research results
+- Call summary with action items and sentiment
+
+---
 
 ## Testing
 
@@ -184,19 +274,43 @@ Each log contains: full transcript, per-turn latency, token usage, cost breakdow
 # Unit tests (no API keys required)
 python -m pytest tests/ -k "not twilio_provider and not google_tts and not soniox and not test_agent" -v
 
-# Full test suite (requires all API keys)
+# Full test suite (requires all API keys configured)
 python -m pytest tests/ -v
 ```
 
-## Integration with set-core
+---
 
-This project is developed using [set-core](https://github.com/tatargabor/set-core) orchestration:
+## Architecture Decisions
 
-- **OpenSpec-driven development** — specifications in `openspec/specs/`, changes planned and executed by parallel agents
-- **set-core commands** — `/opsx:apply`, `/opsx:verify`, `/set:sentinel` for autonomous development
-- **Integration gates** — automated build, test, and merge validation
+**Why Soniox for STT?** — Best-in-class Hungarian speech recognition with true streaming (word-by-word results over WebSocket). Most alternatives either don't support Hungarian well or only offer batch transcription.
 
-See [docs/SETUP.md](docs/SETUP.md) for the full setup guide (Hungarian).
+**Why Google Cloud TTS?** — Chirp3 HD voices sound natural in Hungarian. The `mulaw/8000` output format is directly compatible with Twilio Media Streams, so no transcoding needed.
+
+**Why two Claude models?** — A single model can't be both fast and thorough. Haiku gives you sub-200ms acknowledgments while Sonnet takes 1-3 seconds for a thoughtful, tool-augmented response. The customer hears a natural conversation flow instead of dead air.
+
+**Why FastAPI + WebSocket?** — Twilio Media Streams sends audio as a continuous WebSocket stream. FastAPI's async support lets us run STT, LLM, and TTS loops concurrently without threading complexity.
+
+---
+
+## Built With set-core
+
+This project was developed using [set-core](https://github.com/ASetCoding/set-core), an orchestration framework for Claude Code. Here's how that shaped the development:
+
+Every feature — from the initial STT provider to the two-layer response system — started as an **OpenSpec change**. Each change followed the same lifecycle:
+
+1. **Explore** — think through the problem, clarify requirements
+2. **Propose** — write a structured proposal with scope and constraints
+3. **Specify** — create detailed specs and design documents
+4. **Decompose** — break the work into implementable tasks
+5. **Apply** — agents implement tasks in isolated worktrees
+6. **Verify** — automated gates check build, tests, and design compliance
+7. **Archive** — merge to main and close the change
+
+Multiple changes ran in parallel. While one agent implemented the call pipeline, another worked on the safety module, and a third built the webhook server. set-core's sentinel supervisor monitored all agents, caught integration issues, and restarted failed builds automatically.
+
+The `openspec/changes/` directory contains the full history of every structured change that built this project — from `env-and-providers` (the first API integrations) through `prompt-caching` (the latest optimization).
+
+---
 
 ## License
 

@@ -29,7 +29,7 @@ async def generate_call_summary(
     if not transcript:
         return {}
 
-    from .i18n import _SUMMARY_PROMPT, _ROLE_LABELS, get_text
+    from .i18n import _SUMMARY_PROMPT, _ROLE_LABELS, _SUMMARY_FALLBACK, get_text
 
     # Format transcript for Claude
     role_labels = get_text(_ROLE_LABELS)
@@ -51,12 +51,13 @@ async def generate_call_summary(
     try:
         summary_data = json.loads(response.content[0].text)
     except (json.JSONDecodeError, IndexError):
+        fallback = get_text(_SUMMARY_FALLBACK)
         summary_data = {
             "modification_requests": [],
             "questions": [],
-            "sentiment": "semleges",
+            "sentiment": fallback["sentiment"],
             "summary": response.content[0].text if response.content else "",
-            "priority": "közepes",
+            "priority": fallback["priority"],
         }
 
     # Enrich with call metadata

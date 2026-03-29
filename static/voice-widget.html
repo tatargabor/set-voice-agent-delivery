@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="hu">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -73,36 +73,36 @@
 </head>
 <body>
     <div class="widget">
-        <h1>AI Asszisztens</h1>
-        <p class="subtitle">WebBuilder Kft.</p>
+        <h1 id="title">AI Assistant</h1>
+        <p class="subtitle" id="company-name"></p>
 
         <div class="form-row">
-            <label>Projekt</label>
+            <label id="project-label">Project</label>
             <select id="project">
-                <option value="">Betöltés...</option>
+                <option value="" id="project-loading">Loading...</option>
             </select>
         </div>
 
         <div class="form-row">
-            <input type="text" id="identity" placeholder="Az Ön neve (opcionális)">
+            <input type="text" id="identity" placeholder="Your name (optional)">
         </div>
 
         <div class="form-row">
-            <input type="tel" id="phone" placeholder="Telefonszám (opcionális, pl. +36...)">
+            <input type="tel" id="phone" placeholder="Phone number (optional, e.g. +1...)">
         </div>
 
         <div style="display:flex; gap:20px; justify-content:center; margin-bottom:24px;">
             <div style="text-align:center">
                 <button id="call-btn" disabled>&#x1F3A4;</button>
-                <div style="font-size:0.75rem; color:#999; margin-top:8px;">Böngésző</div>
+                <div style="font-size:0.75rem; color:#999; margin-top:8px;" id="browser-label">Browser</div>
             </div>
             <div style="text-align:center">
                 <button id="phone-btn" style="width:120px;height:120px;border-radius:50%;border:none;background:#3b82f6;color:white;font-size:48px;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;justify-content:center;" disabled>&#x1F4DE;</button>
-                <div style="font-size:0.75rem; color:#999; margin-top:8px;">Telefon</div>
+                <div style="font-size:0.75rem; color:#999; margin-top:8px;" id="phone-label">Phone</div>
             </div>
         </div>
 
-        <div id="status">Inicializálás...</div>
+        <div id="status">Initializing...</div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@twilio/voice-sdk@2.18.1/dist/twilio.min.js"></script>

@@ -1,5 +1,6 @@
 /**
  * Voice Widget — connects browser to AI voice agent via Twilio Client SDK.
+ * UI text is loaded from /api/config (language + company_name from config.yaml).
  */
 
 const callBtn = document.getElementById('call-btn');
@@ -11,6 +12,85 @@ const phoneInput = document.getElementById('phone');
 
 let device = null;
 let activeCall = null;
+
+// --- i18n ---
+
+const UI_TEXTS = {
+    hu: {
+        title: 'AI Asszisztens',
+        projectLabel: 'Projekt',
+        projectLoading: 'Betöltés...',
+        projectSelect: '-- Válasszon projektet --',
+        projectError: 'Hiba a betöltéskor',
+        namePlaceholder: 'Az Ön neve (opcionális)',
+        phonePlaceholder: 'Telefonszám (opcionális, pl. +36...)',
+        browserLabel: 'Böngésző',
+        phoneLabel: 'Telefon',
+        initializing: 'Inicializálás...',
+        ready: 'Kész — válasszon projektet és nyomja meg a gombot',
+        connecting: 'Kapcsolódás...',
+        inCall: 'Beszélgetés folyamatban...',
+        callEnded: 'Hívás befejezve — nyomja meg újra a híváshoz',
+        callCancelled: 'Hívás megszakítva',
+        dialing: 'Tárcsázás...',
+        callStarted: 'Hívás indítva:',
+        enterPhone: 'Adjon meg telefonszámot!',
+        indexing: 'Projekt indexelése...',
+        readyToCall: 'Kész a hívásra',
+        error: 'Hiba:',
+        callError: 'Hívás hiba:',
+        connectionError: 'Kapcsolódási hiba:',
+    },
+    en: {
+        title: 'AI Assistant',
+        projectLabel: 'Project',
+        projectLoading: 'Loading...',
+        projectSelect: '-- Select a project --',
+        projectError: 'Error loading projects',
+        namePlaceholder: 'Your name (optional)',
+        phonePlaceholder: 'Phone number (optional, e.g. +1...)',
+        browserLabel: 'Browser',
+        phoneLabel: 'Phone',
+        initializing: 'Initializing...',
+        ready: 'Ready — select a project and press the button',
+        connecting: 'Connecting...',
+        inCall: 'Call in progress...',
+        callEnded: 'Call ended — press again to call',
+        callCancelled: 'Call cancelled',
+        dialing: 'Dialing...',
+        callStarted: 'Call started:',
+        enterPhone: 'Please enter a phone number!',
+        indexing: 'Indexing project...',
+        readyToCall: 'Ready to call',
+        error: 'Error:',
+        callError: 'Call error:',
+        connectionError: 'Connection error:',
+    },
+};
+
+let t = UI_TEXTS.en; // default, overwritten by /api/config
+
+async function loadConfig() {
+    try {
+        const resp = await fetch('/api/config');
+        const data = await resp.json();
+        const lang = data.language || 'en';
+        t = UI_TEXTS[lang] || UI_TEXTS.en;
+
+        document.documentElement.lang = lang === 'hu' ? 'hu' : 'en';
+        document.getElementById('title').textContent = t.title;
+        document.getElementById('company-name').textContent = data.company_name || '';
+        document.getElementById('project-label').textContent = t.projectLabel;
+        document.getElementById('project-loading').textContent = t.projectLoading;
+        identityInput.placeholder = t.namePlaceholder;
+        phoneInput.placeholder = t.phonePlaceholder;
+        document.getElementById('browser-label').textContent = t.browserLabel;
+        document.getElementById('phone-label').textContent = t.phoneLabel;
+        statusEl.textContent = t.initializing;
+    } catch (err) {
+        console.warn('Config load failed, using English defaults:', err);
+    }
+}
 
 function setStatus(text, className = '') {
     statusEl.textContent = text;
@@ -27,7 +107,7 @@ async function loadProjects() {
     try {
         const resp = await fetch('/api/projects');
         const data = await resp.json();
-        projectSelect.innerHTML = '<option value="">-- Válasszon projektet --</option>';
+        projectSelect.innerHTML = `<option value="">${t.projectSelect}</option>`;
         for (const p of data.projects) {
             const opt = document.createElement('option');
             opt.value = p.id;
@@ -35,7 +115,7 @@ async function loadProjects() {
             projectSelect.appendChild(opt);
         }
     } catch (err) {
-        projectSelect.innerHTML = '<option value="">Hiba a betöltéskor</option>';
+        projectSelect.innerHTML = `<option value="">${t.projectError}</option>`;
     }
 }
 
@@ -56,18 +136,18 @@ async function initDevice() {
         });
 
         device.on('registered', () => {
-            setStatus('Kész — válasszon projektet és nyomja meg a gombot');
+            setStatus(t.ready);
             callBtn.disabled = false;
         });
 
         device.on('error', (err) => {
-            setStatus(`Hiba: ${err.message}`, 'error');
+            setStatus(`${t.error} ${err.message}`, 'error');
             setButtonState('');
         });
 
         await device.register();
     } catch (err) {
-        setStatus(`Kapcsolódási hiba: ${err.message}`, 'error');
+        setStatus(`${t.connectionError} ${err.message}`, 'error');
     }
 }
 
@@ -79,11 +159,10 @@ async function startCall() {
 
     try {
         setButtonState('connecting');
-        setStatus('Kapcsolódás...');
+        setStatus(t.connecting);
 
         const identity = identityInput.value.trim() || 'browser-user';
         const project = projectSelect.value;
-        const phone = phoneInput.value.trim();
 
         if (!device) {
             await initDevice();
@@ -99,30 +178,30 @@ async function startCall() {
 
         activeCall.on('accept', () => {
             setButtonState('active');
-            setStatus('Beszélgetés folyamatban...', 'active');
+            setStatus(t.inCall, 'active');
         });
 
         activeCall.on('disconnect', () => {
             activeCall = null;
             setButtonState('');
-            setStatus('Hívás befejezve — nyomja meg újra a híváshoz');
+            setStatus(t.callEnded);
         });
 
         activeCall.on('cancel', () => {
             activeCall = null;
             setButtonState('');
-            setStatus('Hívás megszakítva');
+            setStatus(t.callCancelled);
         });
 
         activeCall.on('error', (err) => {
             activeCall = null;
             setButtonState('');
-            setStatus(`Hiba: ${err.message}`, 'error');
+            setStatus(`${t.error} ${err.message}`, 'error');
         });
 
     } catch (err) {
         setButtonState('');
-        setStatus(`Hívás hiba: ${err.message}`, 'error');
+        setStatus(`${t.callError} ${err.message}`, 'error');
     }
 }
 
@@ -131,7 +210,7 @@ callBtn.addEventListener('click', startCall);
 async function startPhoneCall() {
     const phone = phoneInput.value.trim();
     if (!phone) {
-        setStatus('Adjon meg telefonszámot!', 'error');
+        setStatus(t.enterPhone, 'error');
         return;
     }
 
@@ -140,7 +219,7 @@ async function startPhoneCall() {
 
     phoneBtn.disabled = true;
     phoneBtn.style.background = '#f59e0b';
-    setStatus('Tárcsázás...', '');
+    setStatus(t.dialing, '');
 
     try {
         const resp = await fetch('/api/call', {
@@ -150,21 +229,20 @@ async function startPhoneCall() {
         });
         const data = await resp.json();
         if (data.error) {
-            setStatus(`Hiba: ${data.error}`, 'error');
+            setStatus(`${t.error} ${data.error}`, 'error');
             phoneBtn.disabled = false;
             phoneBtn.style.background = '#3b82f6';
         } else {
-            setStatus(`Hívás indítva: ${phone}`, 'active');
+            setStatus(`${t.callStarted} ${phone}`, 'active');
             phoneBtn.style.background = '#ef4444';
             phoneBtn.disabled = false;
-            // Reset after 60s
             setTimeout(() => {
                 phoneBtn.style.background = '#3b82f6';
-                setStatus('Kész — válasszon projektet és nyomja meg a gombot');
+                setStatus(t.ready);
             }, 60000);
         }
     } catch (err) {
-        setStatus(`Hiba: ${err.message}`, 'error');
+        setStatus(`${t.error} ${err.message}`, 'error');
         phoneBtn.disabled = false;
         phoneBtn.style.background = '#3b82f6';
     }
@@ -172,12 +250,10 @@ async function startPhoneCall() {
 
 phoneBtn.addEventListener('click', startPhoneCall);
 
-// Enable phone button when phone input has value
 phoneInput.addEventListener('input', () => {
     phoneBtn.disabled = !phoneInput.value.trim();
 });
 
-// Trigger project indexing when project is selected
 projectSelect.addEventListener('change', async () => {
     const projectId = projectSelect.value;
     if (!projectId) return;
@@ -189,22 +265,22 @@ projectSelect.addEventListener('change', async () => {
         });
         const data = await resp.json();
         if (data.status === 'indexing') {
-            setStatus('Projekt indexelése...', 'info');
-            // Brief indicator, non-blocking
+            setStatus(t.indexing, 'info');
             setTimeout(() => {
-                if (statusEl.textContent === 'Projekt indexelése...') {
-                    setStatus('Kész a hívásra', 'success');
+                if (statusEl.textContent === t.indexing) {
+                    setStatus(t.readyToCall, 'success');
                 }
             }, 4000);
         } else if (data.status === 'cached') {
-            setStatus('Kész a hívásra', 'success');
+            setStatus(t.readyToCall, 'success');
         }
     } catch (err) {
-        // Non-critical — indexing is optional, call still works without it
         console.warn('Index trigger failed:', err);
     }
 });
 
-// Initialize
-loadProjects();
-initDevice();
+// Initialize — load config first, then projects and device
+loadConfig().then(() => {
+    loadProjects();
+    initDevice();
+});

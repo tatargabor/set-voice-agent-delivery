@@ -7,6 +7,14 @@ from src.config import AppSettings, load_app_settings, reset_settings, get_setti
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _set_hungarian(monkeypatch):
+    """These tests use Hungarian word lists — force language to hu."""
+    from src import config
+    settings = config.get_settings()
+    monkeypatch.setattr(settings, "language", "hu")
+
+
 @pytest.fixture
 def project(tmp_path):
     """Create a sample project with specs and changes."""

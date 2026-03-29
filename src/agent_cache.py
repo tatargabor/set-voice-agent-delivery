@@ -6,6 +6,8 @@ from pathlib import Path
 
 import structlog
 
+from .i18n import _AGENT_CACHE_LABELS, get_text
+
 log = structlog.get_logger()
 
 _MAX_FINDINGS = 20
@@ -32,15 +34,19 @@ class AgentCache:
         """Format cache as context for agent system prompt."""
         parts = []
         if self.file_index:
-            parts.append(f"Fájlok ({len(self.file_index)}):\n" + "\n".join(self.file_index[:50]))
+            labels = get_text(_AGENT_CACHE_LABELS)
+            parts.append(f"{labels['files']} ({len(self.file_index)}):\n" + "\n".join(self.file_index[:50]))
         if self.spec_summaries:
+            labels = get_text(_AGENT_CACHE_LABELS)
             specs = "\n".join(f"- {k}: {v}" for k, v in self.spec_summaries.items())
-            parts.append(f"Specifikációk:\n{specs}")
+            parts.append(f"{labels['specs']}:\n{specs}")
         if self.change_summaries:
+            labels = get_text(_AGENT_CACHE_LABELS)
             changes = "\n".join(f"- {k}: {v}" for k, v in self.change_summaries.items())
-            parts.append(f"Change-ek:\n{changes}")
+            parts.append(f"{labels['changes']}:\n{changes}")
         if self.findings:
-            parts.append(f"Korábbi megállapítások:\n" + "\n".join(f"- {f}" for f in self.findings))
+            labels = get_text(_AGENT_CACHE_LABELS)
+            parts.append(f"{labels['findings']}:\n" + "\n".join(f"- {f}" for f in self.findings))
         return "\n\n".join(parts)
 
 

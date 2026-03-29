@@ -7,6 +7,8 @@ from pathlib import Path
 
 import structlog
 
+from .i18n import _TOOL_DESCRIPTIONS, get_text
+
 log = structlog.get_logger()
 
 # Max chars returned by file_read
@@ -15,86 +17,97 @@ _MAX_FILE_CHARS = 2000
 _MAX_GREP_LINES = 30
 
 
+def _tool_desc(key: str) -> str:
+    """Get localized tool description."""
+    return get_text(_TOOL_DESCRIPTIONS).get(key, key)
+
+
 # --- Anthropic tool_use definitions ---
 
-TOOL_DEFINITIONS = [
-    {
-        "name": "openspec_read",
-        "description": "ELSŐDLEGES FORRÁS — Az openspec specifikáció olvasása. Mindig ELŐSZÖR ezt használd! Tartalmazza a projekt követelményeit, terveket, állapotot. Spec vagy change neve kell.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "description": "Spec or change name, e.g. 'navbar' or 'green-menu'",
-                }
-            },
-            "required": ["name"],
-        },
-    },
-    {
-        "name": "docs_read",
-        "description": "MÁSODLAGOS FORRÁS — Design dokumentáció, Figma/UI/UX leírások a docs/ mappából. Használd design kérdéseknél (színek, elrendezés, tipográfia).",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "File path relative to docs/, e.g. 'design.md' or 'figma-export.md'. Leave empty to list available docs.",
-                    "default": "",
-                }
-            },
-            "required": [],
-        },
-    },
-    {
-        "name": "design_check",
-        "description": "Design token keresés a design-snapshot.md-ből. Színek, méretek, komponens stílusok kereséséhez.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "component": {
-                    "type": "string",
-                    "description": "Component name to look up, e.g. 'Navbar', 'Button'",
-                }
-            },
-            "required": ["component"],
-        },
-    },
-    {
-        "name": "file_read",
-        "description": "CSAK HA SZÜKSÉGES — Forráskód olvasás. Csak konkrét technikai kérdésnél használd (pl. 'miért kék a gomb?'), ha az openspec és docs nem ad választ.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "Relative file path, e.g. 'src/components/Navbar.tsx'",
-                }
-            },
-            "required": ["path"],
-        },
-    },
-    {
-        "name": "grep_search",
-        "description": "CSAK HA SZÜKSÉGES — Keresés a forráskódban. Csak ha az openspec/docs nem elég és konkrét kód kell.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "pattern": {
-                    "type": "string",
-                    "description": "Regex pattern to search for",
+def get_tool_definitions() -> list[dict]:
+    """Return tool definitions with localized descriptions."""
+    return [
+        {
+            "name": "openspec_read",
+            "description": _tool_desc("openspec_read"),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Spec or change name, e.g. 'navbar' or 'green-menu'",
+                    }
                 },
-                "path": {
-                    "type": "string",
-                    "description": "Subdirectory to search in (relative), default is project root",
-                    "default": ".",
-                },
+                "required": ["name"],
             },
-            "required": ["pattern"],
         },
-    },
-]
+        {
+            "name": "docs_read",
+            "description": _tool_desc("docs_read"),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "File path relative to docs/, e.g. 'design.md' or 'figma-export.md'. Leave empty to list available docs.",
+                        "default": "",
+                    }
+                },
+                "required": [],
+            },
+        },
+        {
+            "name": "design_check",
+            "description": _tool_desc("design_check"),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "component": {
+                        "type": "string",
+                        "description": "Component name to look up, e.g. 'Navbar', 'Button'",
+                    }
+                },
+                "required": ["component"],
+            },
+        },
+        {
+            "name": "file_read",
+            "description": _tool_desc("file_read"),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Relative file path, e.g. 'src/components/Navbar.tsx'",
+                    }
+                },
+                "required": ["path"],
+            },
+        },
+        {
+            "name": "grep_search",
+            "description": _tool_desc("grep_search"),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "Regex pattern to search for",
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Subdirectory to search in (relative), default is project root",
+                        "default": ".",
+                    },
+                },
+                "required": ["pattern"],
+            },
+        },
+    ]
+
+
+# Keep backward compat — callers import TOOL_DEFINITIONS
+TOOL_DEFINITIONS = get_tool_definitions()
 
 
 # --- Path sandboxing ---
@@ -170,7 +183,7 @@ def grep_search(project_dir: Path, pattern: str, path: str = ".") -> str:
             relative_lines.append(line)
         output = "\n".join(relative_lines)
         if len(lines) > _MAX_GREP_LINES:
-            output += f"\n[...{len(lines) - _MAX_GREP_LINES} további találat]"
+            output += f"\n[...{len(lines) - _MAX_GREP_LINES} more results]"
         return output if output.strip() else "No matches found."
     except subprocess.TimeoutExpired:
         return "Search timed out (5s limit)."

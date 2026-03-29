@@ -12,6 +12,8 @@ from pathlib import Path
 from anthropic import AsyncAnthropic
 import structlog
 
+from .i18n import _INDEXER_LABELS, get_text
+
 log = structlog.get_logger()
 
 INDEXES_DIR = Path(__file__).parent.parent / "logs" / "indexes"
@@ -19,7 +21,8 @@ SUMMARIES_DIR = Path(__file__).parent.parent / "logs" / "summaries"
 
 _MAX_RAW_CHARS = 30000
 
-_SUMMARY_PROMPT = """Egy ügyfél projektjének teljes dokumentációját kapod. Készíts strukturált összefoglalót a projekt állapotáról.
+_SUMMARY_PROMPTS = {
+    "hu": """Egy ügyfél projektjének teljes dokumentációját kapod. Készíts strukturált összefoglalót a projekt állapotáról.
 
 Válaszolj CSAK a megadott JSON formátumban, semmi más szöveget ne adj hozzá:
 
@@ -43,7 +46,33 @@ Válaszolj CSAK a megadott JSON formátumban, semmi más szöveget ne adj hozzá
 }
 
 Ha egy mező nem derül ki a dokumentációból, adj üres stringet vagy üres listát.
-FONTOS: Csak JSON-t adj vissza, semmi mást!"""
+FONTOS: Csak JSON-t adj vissza, semmi mást!""",
+    "en": """You receive the full documentation of a customer's project. Create a structured summary of the project status.
+
+Respond ONLY in the given JSON format, do not add any other text:
+
+{
+  "project_name": "Project name",
+  "description": "1-2 sentence description of what the project does",
+  "modules": [
+    {"name": "Module name", "description": "What it does, current status"}
+  ],
+  "design": {
+    "colors": "Main colors if any (e.g. blue #2563EB, grey background)",
+    "font": "Font if any",
+    "style": "General style (e.g. modern, minimal, corporate)"
+  },
+  "status": {
+    "done": ["List of completed items"],
+    "in_progress": ["Work in progress"],
+    "planned": ["Planned features"]
+  },
+  "previous_requests": ["Previous customer requests if any"]
+}
+
+If a field cannot be determined from the documentation, use an empty string or empty list.
+IMPORTANT: Return only JSON, nothing else!""",
+}
 
 
 def _collect_source_files(project_dir: Path) -> dict[str, str]:
@@ -254,7 +283,7 @@ async def generate_index(project_dir: str | Path, project_id: str) -> dict:
 
     # Add previous requests if any
     if previous_requests:
-        combined += "\n\n--- Korábbi ügyfélkérések ---\n"
+        combined += f"\n\n--- {get_text(_INDEXER_LABELS)['prev_requests_section']} ---\n"
         combined += "\n".join(f"- {r}" for r in previous_requests)
 
     # Send to Claude Haiku
@@ -262,7 +291,7 @@ async def generate_index(project_dir: str | Path, project_id: str) -> dict:
     client = AsyncAnthropic()
     response = await client.messages.create(
         model=model,
-        system=_SUMMARY_PROMPT,
+        system=get_text(_SUMMARY_PROMPTS),
         messages=[{"role": "user", "content": combined}],
         max_tokens=1000,
     )
@@ -308,12 +337,13 @@ def format_summary_for_prompt(summary: dict) -> str:
     if not summary:
         return ""
 
+    il = get_text(_INDEXER_LABELS)
     parts = []
 
     if summary.get("project_name"):
-        parts.append(f"Projekt: {summary['project_name']}")
+        parts.append(f"Project: {summary['project_name']}")
     if summary.get("description"):
-        parts.append(f"Leírás: {summary['description']}")
+        parts.append(f"{il['desc_label']}: {summary['description']}")
 
     modules = summary.get("modules", [])
     if modules:
@@ -323,32 +353,32 @@ def format_summary_for_prompt(summary: dict) -> str:
                 mod_lines.append(f"  - {m.get('name', '?')}: {m.get('description', '')}")
             else:
                 mod_lines.append(f"  - {m}")
-        parts.append("Modulok:\n" + "\n".join(mod_lines))
+        parts.append("Modules:\n" + "\n".join(mod_lines))
 
     design = summary.get("design", {})
     if design and isinstance(design, dict):
         design_parts = []
         if design.get("colors"):
-            design_parts.append(f"Színek: {design['colors']}")
+            design_parts.append(f"{il['colors_label']}: {design['colors']}")
         if design.get("font"):
             design_parts.append(f"Font: {design['font']}")
         if design.get("style"):
-            design_parts.append(f"Stílus: {design['style']}")
+            design_parts.append(f"{il['style_label']}: {design['style']}")
         if design_parts:
             parts.append("Design: " + ", ".join(design_parts))
 
     status = summary.get("status", {})
     if status and isinstance(status, dict):
         status_lines = []
-        for label, key in [("Kész", "done"), ("Folyamatban", "in_progress"), ("Tervezett", "planned")]:
+        for label_key, key in [("done_label", "done"), ("in_progress_label", "in_progress"), ("planned_label", "planned")]:
             items = status.get(key, [])
             if items:
-                status_lines.append(f"  {label}: {', '.join(items)}")
+                status_lines.append(f"  {il[label_key]}: {', '.join(items)}")
         if status_lines:
-            parts.append("Állapot:\n" + "\n".join(status_lines))
+            parts.append(f"{il['status_label']}:\n" + "\n".join(status_lines))
 
     prev = summary.get("previous_requests", [])
     if prev:
-        parts.append("Korábbi ügyfélkérések:\n" + "\n".join(f"  - {r}" for r in prev))
+        parts.append(f"{il['prev_requests_label']}:\n" + "\n".join(f"  - {r}" for r in prev))
 
     return "\n\n".join(parts)
