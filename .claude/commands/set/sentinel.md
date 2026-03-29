@@ -18,15 +18,53 @@ Before acting on any event, classify it into one of two tiers:
 |------|--------|----------|
 | **Tier 1 — Defer** | Do nothing. The orchestrator handles this automatically. | merge-blocked changes, verify/test failures, individual change failures, replan cycles, `waiting:api` loop status |
 | **Tier 2 — Act** | Sentinel intervenes (restart, report, or ask user). | Process crash (SIGKILL, OOM, broken pipe), process hang (stale >120s), non-periodic checkpoint, terminal state (done/stopped/time_limit) |
+| **Tier 3 — Diagnose & Fix** | Sentinel investigates and fixes. | `integration-failed` changes (orchestrator gave up), stuck pipeline (all changes blocked/failed) |
 
 **When uncertain, default to Tier 1 (defer).** The orchestrator has built-in recovery for:
 - **merge-blocked** → `retry_merge_queue` with jq deep-merge resolves package.json conflicts, agent rebase handles others
 - **verify/test failures** → `max_verify_retries` and scoped fix cycles retry automatically
-- **individual change failed** → orchestrator marks it failed and continues with remaining changes
+- **individual change failed with tokens > 0** → orchestrator marks it failed and continues (app-level failure, Tier 1)
+- **individual change failed with 0 tokens** → dispatch bug, NOT app-level failure → **log a finding** with `set-sentinel-finding add --severity bug --summary "change X failed with 0 tokens — dispatch failure"`
 - **replan cycles** → built-in auto-replan logic re-decomposes when needed
 - **waiting:api** → set-loop detects API errors (429, 503) and enters exponential backoff automatically
 
-The sentinel MUST NOT try to fix orchestration-level issues. It should only act on process-level problems.
+The sentinel MUST NOT try to fix routine orchestration-level issues (merge-blocked, verify retries). But when the orchestrator has **exhausted its retries** and a change is `integration-failed`, the sentinel takes over.
+
+**Tier 3 — diagnose, log finding, and fix (or delegate):**
+When you encounter an issue the orchestrator can't handle:
+
+**IMPORTANT: Check pipeline ownership first.** Before attempting any Tier 3 fix, check if the issue pipeline is already handling this finding:
+```bash
+cat $(python3 -c "from set_orch.paths import SetRuntime; print(SetRuntime('.').sentinel_dir)")/findings.json 2>/dev/null | python3 -c "import sys,json; [print(f'{f[\"id\"]}: {f[\"status\"]}') for f in json.load(sys.stdin).get('findings',[])]"
+```
+If a finding shows status `"pipeline"`, the issue management system is handling it — do NOT attempt to fix it. Only act on findings with status `"open"`.
+
+1. **Log a finding FIRST** — before any investigation:
+   ```bash
+   set-sentinel-finding add --severity bug --summary "Brief description of what you observed"
+   ```
+2. **Quick diagnosis** — read relevant logs (tail -50), identify the pattern
+3. **If simple fix** (untracked files, stale state, config issue) → fix it directly, then log the resolution:
+   ```bash
+   set-sentinel-finding update FINDING_ID --status fixed --commit "what you did"
+   ```
+4. **If complex fix** (code bug, architecture issue) → don't attempt to fix. Log detailed diagnosis and escalate:
+   ```bash
+   set-sentinel-finding add --severity bug --detail "Root cause: watchdog has no grace period for fresh dispatch. The PID dies within 16s because gnome-terminal exits after spawning the child."
+   ```
+   The issue management system will pick this up and spawn a dedicated investigation agent.
+5. **Reset if applicable** — if you fixed the immediate blocker, reset the change:
+   ```bash
+   python3 -c "
+   import json; f='orchestration-state.json'; s=json.load(open(f))
+   for c in s['changes']:
+       if c['name']=='CHANGE_NAME' and c['status'] in ('integration-failed','stalled'):
+           c['status']='done'; c['total_merge_attempts']=0
+   json.dump(s, open(f,'w'), indent=2)
+   "
+   ```
+
+**Key principle: the sentinel detects and logs, it doesn't spend turns debugging code.** Log the finding, do a quick fix if obvious, otherwise move on and keep monitoring.
 
 **Expected patterns (NOT bugs)** — these look like failures but auto-resolve. Do NOT escalate:
 
@@ -152,17 +190,28 @@ If `set-sentinel-inbox check` returns messages, read and respond to them before 
 - "status" → respond with current state summary
 - Any other message → acknowledge and log
 
-**When discovering issues during monitoring**, log findings:
+**IMPORTANT: Always log findings when discovering issues.** Every non-trivial issue you detect MUST be recorded as a finding — this feeds the issue management system. Don't just investigate silently.
+
 ```bash
-# Example: IDOR vulnerability found
+# Framework bug — agent dispatch failure, watchdog issue, merge blocker
+set-sentinel-finding add --severity bug --summary "Watchdog kills agent within 16s of dispatch — no grace period"
+
+# App-level bug found during monitoring
 set-sentinel-finding add --severity bug --change "add-cart" --summary "IDOR: cart delete not scoped by sessionId"
 
-# Example: agent stuck in a loop
+# Agent stuck in a loop
 set-sentinel-finding add --severity pattern --change "add-products" --summary "Agent type error loop (3 iterations)"
 
-# Example: phase assessment
+# Phase assessment
 set-sentinel-finding assess --scope "phase-2" --summary "2/4 merged, 1 critical IDOR" --recommendation "Fix IDOR before proceeding"
 ```
+
+**When to log findings:**
+- `integration-failed` change → log what blocked the merge
+- Agent dispatch fails repeatedly → log the dispatch failure pattern
+- Orchestrator crashes → log the crash reason
+- Framework bug discovered → log with `--severity bug`
+- Any Tier 3 diagnosis → log BEFORE attempting the fix
 
 ### Step 3: Handle the poll result
 
@@ -176,7 +225,23 @@ Just say something brief like: `Orchestration running (3/7 changes, 1.2M tokens)
 
 **If WARNING:token_stuck is present**: escalate to user on first detection only. Say: "Warning: N change(s) have used >500K tokens with no commit in 30 min — may be stuck." Then read the state to list which changes are stuck. Track this so you don't repeat the warning every poll.
 
-**If WARNING:deadlocked is present**: escalate to user on first detection only. Read the state to identify the specific changes and their failed dependencies. Say: "Deadlock: N pending change(s) blocked by failed dependencies — manual intervention needed. Run `set-orchestrate reset --partial` or clear deps manually."
+**If WARNING:deadlocked is present** OR **all remaining changes are blocked by a failed change**: Don't just report — fix it. Check the failed change:
+- If 0 tokens (dispatch failure): reset it to `pending` so the orchestrator retries:
+  ```bash
+  python3 -c "
+  import json; f='orchestration-state.json'; s=json.load(open(f))
+  for c in s['changes']:
+      if c['name']=='CHANGE_NAME' and c['status']=='failed' and c.get('input_tokens',0)==0:
+          c['status']='pending'; c['worktree_path']=None; c['ralph_pid']=None
+  json.dump(s, open(f,'w'), indent=2)
+  "
+  ```
+  Log a finding: `set-sentinel-finding add --severity bug --change CHANGE_NAME --summary "Reset failed change (0 tokens dispatch failure) to pending for retry"`
+- If tokens > 0 (app-level failure): the agent tried and failed. Log finding and move on.
+
+**If any change has status `integration-failed`**: this means the orchestrator exhausted its merge retries. Apply **Tier 3** — read the merge log, diagnose the root cause, fix it on main, and reset the change to `done`. Don't defer this — the orchestrator already gave up.
+
+**CRITICAL: Don't just recommend actions — DO them.** You are the sentinel, not a reporter. If a simple reset or restart can unblock the pipeline, execute it immediately.
 
 Then **immediately go back to Step 2** (start another background poll).
 
@@ -184,34 +249,47 @@ Then **immediately go back to Step 2** (start another background poll).
 
 | Status | Action |
 |--------|--------|
-| `done` | Produce final report (see Step 5), stop |
-| `stopped` | Report "User stopped orchestration", stop |
-| `time_limit` | Summarize progress (changes done/total, tokens, time elapsed), stop |
+| `done` with ALL changes merged | Produce final report (see Step 5), stop |
+| `done` with non-merged changes | Some changes failed — log findings for failures, report, stop |
+| `stopped` but orchestrator process still alive | NOT terminal — just a stale state write. Keep polling. |
+| `stopped` and orchestrator process dead | Restart orchestrator: `set-orchestrate start $ARGUMENTS &` |
+| `time_limit` | Summarize progress, stop |
+
+**IMPORTANT:** `stopped` is NOT always terminal. The orchestrator may write "stopped" transiently (bash EXIT trap, duplicate monitor cleanup). Always check if the orchestrator process is alive before treating "stopped" as terminal. If the process died, restart it — don't produce a final report.
 
 #### EVENT: process_exit (crash)
 
-The orchestrator process exited. Handle with simple restart logic — do NOT read logs or diagnose errors unless rapid crash threshold is hit.
+The orchestrator process exited. Handle with simple restart — **NEVER clean up files before restarting**.
 
 1. Check state.json status:
    ```bash
    STATUS=$(jq -r '.status // "unknown"' orchestration-state.json 2>/dev/null || echo "unknown")
    ```
-   If `done`, `stopped`, or `time_limit` → treat as normal exit, produce completion report (Step 5).
+   If `done` → produce completion report (Step 5), check if all changes actually merged (see below).
+   If `time_limit` → summarize progress, stop.
 
 2. Track rapid crashes: if the orchestrator ran less than 5 minutes since `last_start_time`, increment `rapid_crashes`.
 
-3. If `rapid_crashes >= 5` → **stop and report**:
-   - Read the last 50 lines of orchestration.log
+3. If `rapid_crashes >= 3` → **stop and report**:
+   - Read the last 50 lines of the orchestration log
+   - Log a finding: `set-sentinel-finding add --severity bug --summary "Orchestrator rapid crash 3x"`
    - Report the error pattern to the user
-   - Do NOT restart
+   - Do NOT restart, do NOT "clean up", do NOT delete any files
 
-4. Otherwise → restart (no diagnosis needed — the orchestrator saves state and resumes):
+4. Otherwise → **simple restart** (the orchestrator auto-resumes from saved state):
    ```bash
    sleep 30
    set-orchestrate start $ARGUMENTS &
    ORCH_PID=$!
    ```
    Update `restart_count`, `last_start_time`, then go back to Step 2.
+
+**RESTART RULES:**
+- ONLY action: `set-orchestrate start $ARGUMENTS &` — nothing else
+- Do NOT delete state files, lock files, worktrees, or branches before restarting
+- Do NOT run `set-orchestrate reset` unless the user explicitly asks
+- Do NOT "clean start" — the auto-resume path handles stale states
+- The orchestrator resolves its own lock conflicts, orphaned changes, and stale state
 
 #### EVENT: checkpoint
 
@@ -324,21 +402,39 @@ The sentinel MUST NOT:
 - Modify `.claude/orchestration.yaml` or any orchestration directives
 - Run build/generate/install commands that change project state
 - Merge branches or resolve conflicts
-- Create, edit, or delete worktrees beyond what `set-orchestrate` manages
 - Make architectural or quality decisions on behalf of the user
 - Diagnose orchestration-level issues (merge conflicts, test failures, change failures) — these are the orchestrator's responsibility
-- Reset orchestration state from running to stopped — the orchestrator handles stale state on resume
 
-**If the sentinel cannot fix a problem with a simple process restart, it MUST stop and report.** Another agent (or the user) will make the fix, then the sentinel can be restarted to continue.
+**CRITICAL — Files the sentinel MUST NEVER touch:**
+
+| File/Dir | Why | What happens if deleted |
+|----------|-----|----------------------|
+| `orchestration-state.json` | Entire run memory (statuses, retries, tokens) | Re-decompose with DIFFERENT plan, all progress lost |
+| `orchestration.lock` | flock-based mutex | Duplicate orchestrators → state corruption |
+| Worktree dirs (`*-wt-*`) | Agent work + gate execution environment | Gates bypass → merge without verify/review/test |
+| Git branches (`change/*`) | Agent commits | Code loss, worktrees become invalid |
+| `orchestration-plan.json` | Decomposition output | Re-decompose with different change names |
+
+**The orchestrator handles ALL recovery internally.** When you restart it with `set-orchestrate start`, it:
+- Detects stale locks via flock (OS releases dead process locks automatically)
+- Detects orphaned "running" changes via watchdog → stalled → redispatch
+- Auto-resumes from any state (running, stopped, checkpoint)
+- Handles stale state files without deletion
+
+**The sentinel's ONLY restart action is: `set-orchestrate start $ARGUMENTS &`**
+Never "clean up" before restarting. Never delete files to "fix" a stuck state. If `set-orchestrate start` itself fails repeatedly (rapid crash ≥3), STOP and report to user.
 
 ### NEVER weaken quality gates
 
 Specifically, the sentinel MUST NEVER remove, disable, or modify:
 - `smoke_command` — even if smoke tests fail repeatedly (port mismatch failures are expected pre-merge, retries handle them)
-- `test_command` — or any other test directive
+- `test_command` — or any other test directive in `set/orchestration/config.yaml`
 - `merge_policy`, `review_before_merge`, `max_verify_retries`
 
 If tests fail persistently → **stop and report to the user**, do NOT weaken the gates.
+
+**Exception — fixing test infrastructure (not weakening):**
+Modifying `vitest.config.ts`, `playwright.config.ts`, or `package.json` test scripts to fix deterministic failures caused by misconfiguration (e.g., adding `passWithNoTests: true` when there are no unit tests yet) is NOT gate weakening — it's fixing broken infrastructure. The test command still runs; it just doesn't fail on empty test suites. The sentinel MAY apply these fixes directly or delegate to the fix agent via the IssueManager.
 
 ## E2E Mode (Tier 3)
 

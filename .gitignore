@@ -7,7 +7,7 @@ dist/
 .pytest_cache/
 logs/
 recordings/
-wt/.work/
+set/.work/
 gcp-service-account.json
 data/
 contacts.yaml
