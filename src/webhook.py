@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 
-from .config import get_settings
+from .config import get_settings, update_language
 from .agent import ConversationAgent, CallContext
 from .caller_lookup import lookup_caller
 from .i18n import (
@@ -108,6 +108,20 @@ def _resolve_project_dir(project_id: str) -> str | None:
 async def get_config():
     """Return language and company name for the voice widget UI."""
     settings = get_settings()
+    return {"language": settings.language, "company_name": settings.company_name}
+
+
+@app.post("/api/config")
+async def set_config(request: Request):
+    """Update language at runtime. Persists to config.yaml."""
+    body = await request.json()
+    lang = body.get("language")
+    if not lang:
+        return JSONResponse({"error": "language field required"}, status_code=400)
+    try:
+        settings = update_language(lang)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
     return {"language": settings.language, "company_name": settings.company_name}
 
 

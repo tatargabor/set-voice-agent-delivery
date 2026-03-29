@@ -69,28 +69,62 @@ const UI_TEXTS = {
 };
 
 let t = UI_TEXTS.en; // default, overwritten by /api/config
+let currentLang = 'en';
+
+function applyLang(lang, companyName) {
+    currentLang = lang;
+    t = UI_TEXTS[lang] || UI_TEXTS.en;
+
+    document.documentElement.lang = lang;
+    document.getElementById('title').textContent = t.title;
+    if (companyName) document.getElementById('company-name').textContent = companyName;
+    document.getElementById('project-label').textContent = t.projectLabel;
+    identityInput.placeholder = t.namePlaceholder;
+    phoneInput.placeholder = t.phonePlaceholder;
+    document.getElementById('browser-label').textContent = t.browserLabel;
+    document.getElementById('phone-label').textContent = t.phoneLabel;
+
+    // Update toggle buttons
+    document.getElementById('lang-en').classList.toggle('active', lang === 'en');
+    document.getElementById('lang-hu').classList.toggle('active', lang === 'hu');
+}
 
 async function loadConfig() {
     try {
         const resp = await fetch('/api/config');
         const data = await resp.json();
-        const lang = data.language || 'en';
-        t = UI_TEXTS[lang] || UI_TEXTS.en;
-
-        document.documentElement.lang = lang === 'hu' ? 'hu' : 'en';
-        document.getElementById('title').textContent = t.title;
-        document.getElementById('company-name').textContent = data.company_name || '';
-        document.getElementById('project-label').textContent = t.projectLabel;
-        document.getElementById('project-loading').textContent = t.projectLoading;
-        identityInput.placeholder = t.namePlaceholder;
-        phoneInput.placeholder = t.phonePlaceholder;
-        document.getElementById('browser-label').textContent = t.browserLabel;
-        document.getElementById('phone-label').textContent = t.phoneLabel;
+        applyLang(data.language || 'en', data.company_name);
         statusEl.textContent = t.initializing;
     } catch (err) {
         console.warn('Config load failed, using English defaults:', err);
     }
 }
+
+// Language toggle handler
+document.getElementById('lang-toggle').addEventListener('click', async (e) => {
+    const btn = e.target.closest('.lang-btn');
+    if (!btn) return;
+    const lang = btn.dataset.lang;
+    if (lang === currentLang) return;
+
+    try {
+        const resp = await fetch('/api/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ language: lang }),
+        });
+        const data = await resp.json();
+        if (data.error) {
+            setStatus(`${t.error} ${data.error}`, 'error');
+            return;
+        }
+        applyLang(data.language, data.company_name);
+        await loadProjects(); // refresh project list labels
+        setStatus(t.ready);
+    } catch (err) {
+        setStatus(`${t.error} ${err.message}`, 'error');
+    }
+});
 
 function setStatus(text, className = '') {
     statusEl.textContent = text;

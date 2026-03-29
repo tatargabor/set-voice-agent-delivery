@@ -54,6 +54,55 @@ class AppSettings(BaseModel):
 
 _settings: AppSettings | None = None
 
+# Language → TTS voice mapping
+LANGUAGE_TTS_MAP = {
+    "hu": {"voice_name": "hu-HU-Chirp3-HD-Achernar", "language_code": "hu-HU"},
+    "en": {"voice_name": "en-US-Chirp3-HD-Achernar", "language_code": "en-US"},
+}
+
+
+def update_language(lang: str) -> AppSettings:
+    """Switch language at runtime — mutates settings singleton and writes config.yaml.
+
+    Args:
+        lang: "hu" or "en"
+
+    Returns:
+        Updated AppSettings.
+
+    Raises:
+        ValueError: If lang is not a supported language.
+    """
+    if lang not in LANGUAGE_TTS_MAP:
+        raise ValueError(f"Unsupported language: {lang}. Must be one of: {list(LANGUAGE_TTS_MAP.keys())}")
+
+    settings = get_settings()
+    tts_map = LANGUAGE_TTS_MAP[lang]
+
+    # Mutate singleton
+    settings.language = lang
+    settings.tts.voice_name = tts_map["voice_name"]
+    settings.tts.language_code = tts_map["language_code"]
+
+    # Persist to config.yaml
+    config_path = Path(__file__).parent.parent / "config.yaml"
+    if config_path.exists():
+        with open(config_path) as f:
+            data = yaml.safe_load(f) or {}
+    else:
+        data = {}
+
+    data["language"] = lang
+    if "tts" not in data:
+        data["tts"] = {}
+    data["tts"]["voice_name"] = tts_map["voice_name"]
+    data["tts"]["language_code"] = tts_map["language_code"]
+
+    with open(config_path, "w") as f:
+        yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+
+    return settings
+
 
 def load_app_settings(config_path: Path | None = None) -> AppSettings:
     """Load settings from config.yaml. Falls back to defaults if missing."""
